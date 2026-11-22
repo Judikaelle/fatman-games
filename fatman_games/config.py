@@ -24,6 +24,11 @@ DEFAULTS = {
     "delete_installer": False,
     # Couper la musique des installateurs (repacks).
     "mute_installer": True,
+    # Empêcher l'installateur d'ouvrir des pages web (site du repack) et d'écrire dans le hosts du préfixe.
+    "block_installer_web": True,
+    # Ne pas lancer les extras de fin d'installation : vérification QuickSFV (fenêtre qui
+    # bloque la fin) et installateur web DirectX (inutile avec Proton).
+    "skip_installer_extras": True,
 }
 
 

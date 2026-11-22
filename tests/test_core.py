@@ -279,6 +279,26 @@ class SilentInstallTests(unittest.TestCase):
         ]
         self.assertEqual(audio.to_mute(streams, "mkw", names), [2, 3])
 
+    def test_block_web_and_hosts(self):
+        with tempfile.TemporaryDirectory() as t:
+            g = library.create("Jeu", "/x/setup.exe", Path(t))
+            old = config.load
+            try:
+                config.load = lambda: {**config.DEFAULTS, "games_dir": t, "proton": "/p"}
+                ov = proton.installer_environment(g)["WINEDLLOVERRIDES"]
+                self.assertIn("winebrowser.exe=d", ov)
+                self.assertIn("quicksfv.exe,dxwebsetup.exe=d", ov)
+                self.assertNotIn("winebrowser", proton.environment(g).get("WINEDLLOVERRIDES", ""))
+                etc = g.prefix / "drive_c/windows/system32/drivers/etc"
+                etc.mkdir(parents=True)
+                (etc / "hosts").write_text("127.0.0.1 localhost\n1.2.3.4 fitgirl-x.net # Fake FitGirl site\n")
+                (etc / "hosts.rollback").write_text("x")
+                self.assertEqual(proton.clean_hosts(g), 1)
+                self.assertEqual((etc / "hosts").read_text(), "127.0.0.1 localhost\n")
+                self.assertFalse((etc / "hosts.rollback").exists())
+            finally:
+                config.load = old
+
     def test_obvious_exe(self):
         a, b = Candidate(Path("a.exe"), 1, 40.0), Candidate(Path("b.exe"), 1, 25.0)
         self.assertIs(obvious_exe([a, b]), a)

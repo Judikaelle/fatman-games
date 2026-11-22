@@ -453,6 +453,10 @@ class Window(Adw.ApplicationWindow):
             proton.wait_wineserver(g)
             if muter:
                 muter.stop()
+            removed = proton.clean_hosts(g)
+            if removed:
+                with open(g.install_log, "a") as log:
+                    log.write(f"=== {removed} ligne(s) ajoutée(s) au hosts du préfixe par l'installateur : retirées\n")
             cands = find_executables(g.prefix / "drive_c", g.name)
             GLib.idle_add(self._installer_done, g.slug, rc, cands)
         threading.Thread(target=wait, daemon=True).start()

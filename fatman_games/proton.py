@@ -57,11 +57,47 @@ def windows_dir(game: Game) -> str:
     return f"C:\\Games\\{name}"
 
 
+# Programmes que les repacks lancent en fin d'installation et qu'on empêche de démarrer
+# (Wine répond « module introuvable », l'installateur continue).
+INSTALLER_EXTRAS = ["quicksfv.exe", "dxwebsetup.exe"]
+
+
+def _add_overrides(env: dict, rule: str) -> None:
+    env["WINEDLLOVERRIDES"] = ";".join(x for x in (env.get("WINEDLLOVERRIDES"), rule) if x)
+
+
 def installer_environment(game: Game) -> dict:
     env = environment(game)
-    if config.load().get("mute_installer", True):
+    cfg = config.load()
+    if cfg.get("mute_installer", True):
         audio.tag_env(env, game.slug)  # repérage du flux audio à couper (voir audio.py)
+    if cfg.get("block_installer_web", True):
+        # Sans winebrowser, « ouvrir le site » en fin d'installation échoue sans rien ouvrir.
+        _add_overrides(env, "winebrowser.exe=d")
+    if cfg.get("skip_installer_extras", True):
+        _add_overrides(env, ",".join(INSTALLER_EXTRAS) + "=d")
     return env
+
+
+def clean_hosts(game: Game) -> int:
+    """Retire du hosts du préfixe les lignes ajoutées par les repacks (blocage de faux sites).
+
+    Ce fichier ne concerne que les programmes Windows du jeu, jamais Linux.
+    """
+    if not config.load().get("block_installer_web", True):
+        return 0
+    etc = game.prefix / "drive_c/windows/system32/drivers/etc"
+    hosts = etc / "hosts"
+    try:
+        lines = hosts.read_bytes().decode("utf-8", "replace").splitlines(keepends=True)
+    except OSError:
+        return 0
+    kept = [l for l in lines if "fitgirl" not in l.lower()]
+    removed = len(lines) - len(kept)
+    if removed:
+        hosts.write_text("".join(kept))
+    (etc / "hosts.rollback").unlink(missing_ok=True)
+    return removed
 
 
 def install_command(installer: Path, kind: str, target: str, silent: bool) -> list[str]:
@@ -97,6 +133,10 @@ def start_installer(game: Game, installer: Path, silent: bool = False) -> subpro
     log.write(f"=== Arguments : {' '.join(args[1:])}\n".encode())
     if config.load().get("mute_installer", True):
         log.write("=== Musique de l'installateur coupée (sourdine PipeWire)\n".encode())
+    if config.load().get("block_installer_web", True):
+        log.write("=== Ouverture de pages web bloquée (winebrowser désactivé)\n".encode())
+    if config.load().get("skip_installer_extras", True):
+        log.write(f"=== Extras de fin d'installation non lancés : {', '.join(INSTALLER_EXTRAS)}\n".encode())
     log.flush()
     return subprocess.Popen(
         [_umu(), *args],
