@@ -13,7 +13,7 @@ gi.require_version("GdkPixbuf", "2.0")
 from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, GObject, Gtk  # noqa: E402
 
 from . import APP_ID, APP_NAME, config, covers, desktop, library, proton, repack, saves, steam  # noqa: E402
-from .detect import find_executables, guess_name, human_size  # noqa: E402
+from .detect import find_executables, guess_name, human_size, installer_kind, obvious_exe  # noqa: E402
 
 MAX_CANDIDATES = 15
 
@@ -67,6 +67,7 @@ CSS = b"""
 }
 .badge.warn { background: alpha(#c64600, 0.9); }
 .badge.live { background: alpha(#26a269, 0.92); }
+.badge.error { background: alpha(#c01c28, 0.92); }
 .card-menu { min-width: 32px; min-height: 32px; }
 .play-btn { border-radius: 999px; font-weight: 700; }
 """
@@ -148,7 +149,7 @@ class Window(Adw.ApplicationWindow):
             ("install-log", self._install_log), ("run-log", self._run_log),
             ("stop", self._stop), ("uninstall", self._uninstall),
             ("delete-repack", self._delete_repack), ("settings", self._settings),
-            ("steam", self._steam_toggle), ("backup", self._backup), ("restore", self._restore),
+            ("steam", self._steam_toggle), ("retry-install", self._retry_install), ("backup", self._backup), ("restore", self._restore),
         ]:
             act = Gio.SimpleAction.new(name, GLib.VariantType.new("s"))
             act.connect("activate", lambda a, p, cb=cb: cb(p.get_string()))
@@ -287,13 +288,19 @@ class Window(Adw.ApplicationWindow):
             sub.set_label("Opération en cours")
         elif g.status == library.INSTALLING and g.slug in self.installing:
             badge("Installation", spinner=True)
-            sub.set_label("Suis l'installateur Windows")
+            sub.set_label("Installation automatique…" if g.install_mode == "auto"
+                          else "Suis l'installateur Windows")
             bar = Gtk.ProgressBar(margin_start=14, margin_end=14, margin_top=2, pulse_step=0.08)
             card.append(bar)
             old = self.progress.get(g.slug)
             self.progress[g.slug] = (bar, sub, old[2] if old else 0, old[3] if old else time.time())
             if old and old[2]:
                 sub.set_label(f"{human_size(old[2])} écrits")
+        elif g.status == library.FAILED:
+            badge("Échec", "error")
+            sub.set_label("Installation automatique échouée")
+            sub.set_tooltip_text("Voir « Journal d'installation » dans le menu ⋮")
+            button("Réessayer avec la fenêtre", "retry-install", icon="view-refresh-symbolic")
         elif g.status in (library.INSTALLING, library.NEEDS_EXE):
             badge("À configurer", "warn")
             sub.set_label("Installation interrompue" if g.status == library.INSTALLING
@@ -357,21 +364,42 @@ class Window(Adw.ApplicationWindow):
         if not installer.is_file():
             self.toast(f"Fichier introuvable : {installer}")
             return
+        cfg = config.load()
+        kind = installer_kind(installer)
         entry = Gtk.Entry(text=guess_name(installer), activates_default=True)
         source = (installer.parent.name if installer.stem.lower() in {"setup", "install", "installer"}
                   else installer.name)
-        dlg = Adw.AlertDialog(
-            heading="Installer un jeu",
-            body=(f"{source}\n\nNom du jeu dans ta liste :"),
-        )
+        dlg = Adw.AlertDialog(heading="Installer un jeu", body=f"{source}\n\nNom du jeu dans ta liste :")
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         box.append(entry)
-        hint = Gtk.Label(
-            label="L'installateur Windows va s'ouvrir. Garde le dossier qu'il propose "
-                  "(C:\\Games\\…) et coche ce que tu veux, puis attends la fin.",
-            wrap=True, xalign=0)
+        opts = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
+        opts.add_css_class("boxed-list")
+        auto = Adw.SwitchRow(title="Installation automatique")
+        if kind:
+            auto.set_active(bool(cfg.get("auto_install", True)))
+            auto.set_subtitle("Aucune fenêtre Windows : options par défaut de l'installateur "
+                              "(en général tout le jeu et ses DLC)")
+        else:
+            auto.set_active(False)
+            auto.set_sensitive(False)
+            auto.set_subtitle("Pas prise en charge par cet installateur : il va s'ouvrir")
+        opts.append(auto)
+        delete = Adw.SwitchRow(title="Supprimer l'installateur à la fin",
+                               subtitle="Une fois le jeu prêt. Définitif, sans corbeille",
+                               active=bool(cfg.get("delete_installer", False)))
+        opts.append(delete)
+        box.append(opts)
+        hint = Gtk.Label(wrap=True, xalign=0)
         hint.add_css_class("dim-label")
         box.append(hint)
+
+        def update_hint(*_):
+            hint.set_label(
+                "Tu recevras une notification quand le jeu sera prêt." if auto.get_active() else
+                "L'installateur Windows va s'ouvrir. Garde le dossier qu'il propose "
+                "(C:\\Games\\…) et coche ce que tu veux, puis attends la fin.")
+        auto.connect("notify::active", update_hint)
+        update_hint()
         dlg.set_extra_child(box)
         dlg.add_response("cancel", "Annuler")
         dlg.add_response("install", "Installer")
@@ -381,23 +409,42 @@ class Window(Adw.ApplicationWindow):
 
         def on_response(_d, resp):
             name = entry.get_text().strip()
-            if resp == "install" and name:
-                self._run_installer(name, installer)
+            if resp != "install" or not name:
+                return
+            cfg = config.load()
+            if kind:
+                cfg["auto_install"] = auto.get_active()
+            cfg["delete_installer"] = delete.get_active()
+            try:
+                config.save(cfg)
+            except OSError:
+                pass
+            try:
+                g = library.create(name, str(installer))
+            except OSError as e:
+                self.toast(f"Impossible de créer le dossier du jeu : {e}")
+                return
+            g.delete_installer = delete.get_active()
+            self._run_installer(g, installer, auto.get_active())
         dlg.connect("response", on_response)
         dlg.present(self)
 
-    def _run_installer(self, name: str, installer: Path) -> None:
+    def _run_installer(self, g: library.Game, installer: Path, silent: bool) -> None:
+        silent = silent and bool(installer_kind(installer))
+        g.install_mode = "auto" if silent else "window"
+        g.status = library.INSTALLING
         try:
-            g = library.create(name, str(installer))
-            proc = proton.start_installer(g, installer)
+            g.save()
+            proc = proton.start_installer(g, installer, silent)
         except (OSError, RuntimeError) as e:
             self.toast(f"Impossible de lancer l'installation : {e}")
             return
         self.installing[g.slug] = proc
         self.progress[g.slug] = (None, None, 0, time.time())
         self.refresh()
-        self.toast(f"Installation de {name} : l'installateur s'ouvre (la première fois, "
-                   "Proton prépare l'environnement, ça prend une minute).")
+        first = "" if (g.prefix / "drive_c").is_dir() else " La première fois, Proton prépare l'environnement (une minute)."
+        self.toast((f"Installation automatique de {g.name}, sans fenêtre." if silent
+                    else f"Installation de {g.name} : l'installateur s'ouvre.") + first)
 
         def wait():
             rc = proc.wait()
@@ -406,26 +453,46 @@ class Window(Adw.ApplicationWindow):
             GLib.idle_add(self._installer_done, g.slug, rc, cands)
         threading.Thread(target=wait, daemon=True).start()
 
+    def _retry_install(self, slug: str) -> None:
+        g = library.get(slug)
+        if not g or slug in self.installing:
+            return
+        installer = Path(g.installer) if g.installer else None
+        if not installer or not installer.is_file():
+            self.toast("L'installateur n'est plus là : retélécharge-le, ou choisis le .exe à la main.")
+            return
+        proton.kill_prefix(g)
+        self._run_installer(g, installer, silent=False)
+
     def _installer_done(self, slug, rc, cands):
         self.installing.pop(slug, None)
         self.progress.pop(slug, None)
         g = library.get(slug)
         if not g:
             return False
-        if cands:
-            desktop.notify(f"{g.name} : installation terminée",
-                           "Choisis le fichier du jeu pour finir.", str(g.icon) if g.icon.exists() else "")
-        else:
-            desktop.notify(f"{g.name} : aucun jeu trouvé", "L'installation a peut-être été annulée.")
+        auto = g.install_mode == "auto"
+        icon = str(g.icon) if g.icon.exists() else ""
+        with open(g.install_log, "a") as log:
+            log.write(f"=== Fin : code {rc}, {len(cands)} exécutable(s) trouvé(s)\n")
         if not cands:
-            g.status = library.NEEDS_EXE
+            g.status = library.FAILED if auto else library.NEEDS_EXE
             g.save()
             self.refresh()
-            self.toast(f"{g.name} : aucun jeu trouvé (installation annulée ? code {rc}).")
+            desktop.notify(f"{g.name} : aucun jeu trouvé",
+                           "L'installation automatique a échoué : réessaie avec la fenêtre."
+                           if auto else "L'installation a peut-être été annulée.")
+            self.toast(f"{g.name} : aucun jeu trouvé (code {rc}). Voir le journal d'installation.")
             return False
         g.status = library.NEEDS_EXE
         g.save()
         self.fresh.add(slug)
+        best = obvious_exe(cands) if auto and rc == 0 else None
+        if best:
+            self.set_exe(g, best.path)
+            desktop.notify(f"{g.name} est prêt", f"Installé automatiquement ({best.path.name}).",
+                           str(g.icon) if g.icon.exists() else icon)
+            return False
+        desktop.notify(f"{g.name} : installation terminée", "Choisis le fichier du jeu pour finir.", icon)
         self.refresh()
         self._choose_exe_dialog(g, cands)
         return False
@@ -525,7 +592,8 @@ class Window(Adw.ApplicationWindow):
         self.toast(f"{g.name} est prêt : bouton « Jouer », ou cherche-le dans le menu K.")
         if g.slug in self.fresh:
             self.fresh.discard(g.slug)
-            self._delete_repack(g.slug, after_install=True)
+            if g.delete_installer:
+                self._delete_repack(g.slug, after_install=True)
 
     # ------------------------------------------------------- installateur
 
@@ -574,7 +642,10 @@ class Window(Adw.ApplicationWindow):
                 return False
             threading.Thread(target=work, daemon=True).start()
         dlg.connect("response", on_response)
-        dlg.present(self)
+        if after_install:  # déjà demandé dans la fenêtre « Installer un jeu »
+            on_response(dlg, "delete")
+        else:
+            dlg.present(self)
 
     # ---------------------------------------------------------- actions jeu
 

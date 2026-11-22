@@ -6,8 +6,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from fatman_games import config, library, repack, saves  # noqa: E402
-from fatman_games.detect import dll_overrides, clean_name, find_executables, guess_name, slugify  # noqa: E402
+from fatman_games import config, library, proton, repack, saves  # noqa: E402
+from fatman_games.detect import (Candidate, dll_overrides, clean_name, find_executables, guess_name,  # noqa: E402
+                                 installer_kind, obvious_exe, slugify)
 
 
 def make_file(p: Path, size: int) -> None:
@@ -225,6 +226,59 @@ class LibraryTests(unittest.TestCase):
             (root / "broken").mkdir()
             (root / "broken" / library.META).write_text("{oops")
             self.assertEqual(library.all_games(root), [])
+
+
+class SilentInstallTests(unittest.TestCase):
+    def test_installer_kind(self):
+        with tempfile.TemporaryDirectory() as t:
+            t = Path(t)
+            samples = {
+                "inno.exe": b"MZ" + b"\0" * 5000 + b'<assemblyIdentity name="JR.Inno.Setup"/>',
+                "nsis.exe": b"MZ" + b"\0" * 100 + b"Nullsoft.NSIS.exehead",
+                "other.exe": b"MZ" + b"\0" * 100,
+                "notpe.exe": b"hello Inno Setup Setup Data",
+            }
+            for name, data in samples.items():
+                (t / name).write_bytes(data)
+            (t / "pkg.msi").write_bytes(b"x")
+            self.assertEqual(installer_kind(t / "inno.exe"), "inno")
+            self.assertEqual(installer_kind(t / "nsis.exe"), "nsis")
+            self.assertEqual(installer_kind(t / "other.exe"), "")
+            self.assertEqual(installer_kind(t / "notpe.exe"), "")
+            self.assertEqual(installer_kind(t / "pkg.msi"), "msi")
+            self.assertEqual(installer_kind(t / "absent.exe"), "")
+
+    def test_install_command(self):
+        target = "C:\\Games\\Hades II"
+        inno = proton.install_command(Path("/d/setup.exe"), "inno", target, True)
+        self.assertEqual(inno, ["/d/setup.exe", "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-",
+                                "/DIR=C:\\Games\\Hades II"])
+        self.assertEqual(proton.install_command(Path("/d/setup.exe"), "inno", target, False),
+                         ["/d/setup.exe", "/DIR=C:\\Games\\Hades II"])
+        nsis = proton.install_command(Path("/d/s.exe"), "nsis", target, True)
+        self.assertEqual(nsis[1], "/S")
+        self.assertEqual(nsis[-1], "/D=C:\\Games\\Hades II")  # /D doit rester le dernier
+        msi = proton.install_command(Path("/d/a.msi"), "msi", target, True)
+        self.assertEqual(msi[:3], ["msiexec", "/i", "Z:\\d\\a.msi"])
+        self.assertIn("/qn", msi)
+        # type inconnu : jamais d'option silencieuse
+        self.assertEqual(proton.install_command(Path("/d/x.exe"), "", target, True),
+                         ["/d/x.exe", "/DIR=C:\\Games\\Hades II"])
+
+    def test_obvious_exe(self):
+        a, b = Candidate(Path("a.exe"), 1, 40.0), Candidate(Path("b.exe"), 1, 25.0)
+        self.assertIs(obvious_exe([a, b]), a)
+        self.assertIs(obvious_exe([a]), a)
+        self.assertIsNone(obvious_exe([a, Candidate(Path("c.exe"), 1, 38.0)]))
+        self.assertIsNone(obvious_exe([]))
+
+    def test_new_fields_roundtrip(self):
+        with tempfile.TemporaryDirectory() as t:
+            g = library.create("Jeu", "/x/setup.exe", Path(t))
+            g.install_mode, g.delete_installer, g.status = "auto", True, library.FAILED
+            g.save()
+            g2 = library.get(g.slug, Path(t))
+            self.assertEqual((g2.install_mode, g2.delete_installer, g2.status), ("auto", True, "failed"))
 
 
 if __name__ == "__main__":

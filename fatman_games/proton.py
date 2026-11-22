@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 
 from . import config, library
-from .detect import dll_overrides
+from .detect import dll_overrides, installer_kind
 from .library import Game
 
 
@@ -52,15 +52,45 @@ def _umu() -> str:
     return umu
 
 
-def start_installer(game: Game, installer: Path) -> subprocess.Popen:
-    """Démarre setup.exe. Les installateurs Inno Setup acceptent /DIR : on propose C:\\Games\\<nom>."""
+def windows_dir(game: Game) -> str:
+    name = "".join(c for c in game.name if c not in '<>:"/\\|?*').strip() or game.slug
+    return f"C:\\Games\\{name}"
+
+
+def install_command(installer: Path, kind: str, target: str, silent: bool) -> list[str]:
+    """Arguments passés à umu-run pour cet installateur.
+
+    Inno Setup (repacks) : /VERYSILENT n'affiche rien et prend les options par défaut.
+    NSIS : /S, et /D doit être le dernier argument. MSI : msiexec /qn.
+    Type inconnu : l'installateur s'ouvre normalement (on propose quand même /DIR, sans effet ailleurs).
+    """
+    installer = Path(installer)
+    if kind == "msi":
+        args = ["msiexec", "/i", "Z:" + str(installer.resolve()).replace("/", "\\")]
+        if silent:
+            args += ["/qn", f"TARGETDIR={target}", f"INSTALLDIR={target}"]
+        return args
+    if kind == "nsis":
+        return [str(installer), *(["/S"] if silent else []), f"/D={target}"]
+    args = [str(installer)]
+    if silent and kind == "inno":
+        args += ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-"]
+    return args + [f"/DIR={target}"]
+
+
+def start_installer(game: Game, installer: Path, silent: bool = False) -> subprocess.Popen:
+    """Démarre l'installateur dans le préfixe du jeu, dans C:\\Games\\<nom>."""
     game.prefix.mkdir(parents=True, exist_ok=True)
+    kind = installer_kind(installer)
+    silent = silent and bool(kind)
+    args = install_command(installer, kind, windows_dir(game), silent)
     log = open(game.install_log, "ab")
     log.write(f"\n=== Installation {time.ctime()} : {installer}\n".encode())
+    log.write(f"=== Type : {kind or 'inconnu'} · mode : {'automatique' if silent else 'fenêtre'}\n".encode())
+    log.write(f"=== Arguments : {' '.join(args[1:])}\n".encode())
     log.flush()
-    windows_name = "".join(c for c in game.name if c not in '<>:"/\\|?*').strip() or game.slug
     return subprocess.Popen(
-        [_umu(), str(installer), f"/DIR=C:\\Games\\{windows_name}"],
+        [_umu(), *args],
         cwd=str(Path(installer).parent),
         env=environment(game),
         stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,

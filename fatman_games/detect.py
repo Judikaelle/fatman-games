@@ -103,6 +103,34 @@ def find_executables(root: Path, game_name: str = "") -> list[Candidate]:
     return out
 
 
+def obvious_exe(cands: list[Candidate], margin: float = 5.0) -> Candidate | None:
+    """Le candidat à retenir sans rien demander : seul, ou nettement devant le deuxième."""
+    if not cands:
+        return None
+    if len(cands) == 1 or cands[0].score - cands[1].score >= margin:
+        return cands[0]
+    return None
+
+
+def installer_kind(path: Path) -> str:
+    """Type d'installateur : 'inno', 'nsis', 'msi', ou '' si inconnu (pas de mode automatique)."""
+    path = Path(path)
+    if path.suffix.lower() == ".msi":
+        return "msi"
+    try:
+        with open(path, "rb") as f:
+            data = f.read(16 << 20)  # le programme d'installation est au début ; les archives suivent
+    except OSError:
+        return ""
+    if not data.startswith(b"MZ"):
+        return ""
+    if b"JR.Inno.Setup" in data or b"Inno Setup Setup Data" in data or b"InnoSetupLdrWindow" in data:
+        return "inno"
+    if b"Nullsoft.NSIS" in data or b"NullsoftInst" in data:
+        return "nsis"
+    return ""
+
+
 # DLL système que les repacks remplacent souvent par un « chargeur » placé à côté du .exe
 # (couche de compatibilité Xbox PC / GDK, mod, injecteur). Wine préfère sa version intégrée : il faut lui dire
 # d'utiliser celle du jeu. On n'y met pas dxgi/d3d11/d3d12, qui sont ceux de DXVK/VKD3D.

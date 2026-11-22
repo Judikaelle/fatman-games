@@ -1,6 +1,6 @@
 # FatMan Games
 
-Bibliothèque de jeux Windows pour Linux (Bazzite, CachyOS, Fedora, Arch…). Tu lui donnes l'installateur d'un jeu (`setup.exe`) : elle l'installe sous Proton **en une seule étape**, puis affiche tes jeux **sous forme de cartes avec jaquette**, avec un bouton « Jouer », une entrée dans le menu de ton bureau, le temps de jeu, les réglages par jeu, la sauvegarde des saves et l'ajout à Steam.
+Bibliothèque de jeux Windows pour Linux (Bazzite, CachyOS, Fedora, Arch…). Tu lui donnes l'installateur d'un jeu (`setup.exe`) : elle l'installe sous Proton **en une seule étape, sans fenêtre Windows**, puis affiche tes jeux **sous forme de cartes avec jaquette**, avec un bouton « Jouer », une entrée dans le menu de ton bureau, le temps de jeu, les réglages par jeu, la sauvegarde des saves et l'ajout à Steam.
 
 GTK4 / libadwaita, Python, `umu-run`. Aucune dépendance à compiler.
 
@@ -35,16 +35,18 @@ Facultatif : `mangohud` et `gamescope` pour les réglages correspondants, `notif
 
 1. **Ajouter un jeu** : glisse le `setup.exe` dans la fenêtre, clique sur **Installer un jeu**, ou double-clique sur le `setup.exe`.
 2. **Vérifie le nom** proposé. Il est deviné à partir du nom du dossier : `Hades II v1.0 + 2 DLCs [Repack]` donne `Hades II`.
-3. **Suis l'installateur Windows** qui s'ouvre. Garde le dossier proposé (`C:\Games\<nom>`), puis attends la fin. Pendant ce temps, la carte affiche la quantité de données écrites et le débit.
-4. À la fin, tu reçois une **notification**, et l'appli **propose le `.exe` du jeu**. Valide-le ou choisis-en un autre.
-5. L'appli propose ensuite de **supprimer l'installateur téléchargé** pour récupérer la place. Tu peux aussi le faire plus tard.
+3. **Choisis les deux options** (l'appli retient tes choix pour la fois suivante) :
+   - **Installation automatique** (activée par défaut) : l'installateur tourne sans fenêtre, avec ses options par défaut, en général tout le jeu et ses DLC. La carte affiche la quantité de données écrites et le débit. Désactive l'option pour choisir toi-même les composants (langue, DLC facultatifs) dans l'installateur Windows, en gardant le dossier proposé (`C:\Games\<nom>`).
+   - **Supprimer l'installateur à la fin** (désactivée par défaut) : le `setup.exe` et ses archives sont supprimés dès que le jeu est prêt.
+4. À la fin, tu reçois une **notification**. Si un `.exe` ressort nettement, il est retenu tout seul et le jeu est prêt. Sinon, l'appli te propose les candidats.
+5. Si l'installation automatique ne donne rien, la carte passe en **Échec**. *Journal d'installation* donne le détail, et **Réessayer avec la fenêtre** relance l'installateur normalement.
 6. Le jeu apparaît en carte. Lance-le avec **Jouer**, par un double-clic sur la jaquette, depuis le menu du bureau, ou depuis Steam.
 
 ### Les cartes
 
 - **Jaquette** : l'appli cherche le nom du jeu sur la boutique Steam (seul le nom est envoyé) et garde l'image dans `cover.jpg`. Sans correspondance, la carte affiche un dégradé avec l'icône du `.exe`. Pour changer la jaquette, remplace `cover.jpg` par n'importe quelle image verticale.
 - **Temps de jeu** et date de dernière partie, comptés quelle que soit la façon de lancer le jeu (appli, menu ou Steam).
-- **Badges** : *Installation*, avec une barre de progression ; *À configurer*, quand le `.exe` reste à choisir ; *En cours*, avec un bouton Arrêter.
+- **Badges** : *Installation*, avec une barre de progression ; *À configurer*, quand le `.exe` reste à choisir ; *Échec*, quand l'installation automatique n'a rien installé ; *En cours*, avec un bouton Arrêter.
 - **Recherche** par nom, avec le champ en haut de la fenêtre.
 
 ### Menu « ⋮ » de chaque jeu
@@ -112,11 +114,14 @@ Le fichier `~/.config/fatman-games/config.json` est facultatif :
 ```json
 {
   "games_dir": "/mnt/GAMES/FatMan",
-  "proton": ""
+  "proton": "",
+  "auto_install": true,
+  "delete_installer": false
 }
 ```
 
 - `games_dir` : dossier des jeux.
+- `auto_install`, `delete_installer` : derniers choix de la fenêtre « Installer un jeu », retenus automatiquement.
 - `proton` : chemin d'un Proton par défaut. S'il est vide, l'appli choisit Proton-CachyOS s'il est présent, sinon le GE-Proton le plus récent, sinon n'importe quel Proton trouvé dans `~/.local/share/Steam/compatibilitytools.d` ou `/usr/share/steam/compatibilitytools.d`.
 
 ## Compatibilité des DLL (jeux Xbox PC, mods)
@@ -142,7 +147,7 @@ fatman-games --play hades-ii         # lance un jeu et attend sa fin (menu et St
 
 - **La première installation met une minute avant d'afficher quelque chose** : Proton crée l'environnement Windows du jeu.
 - **La carte reste sur « Installation » quelques minutes après la fermeture de l'installateur** : Proton attend la fin des derniers processus Windows. C'est normal.
-- **« Aucun jeu trouvé »** : l'installation a été annulée, ou le jeu a été installé ailleurs. Passe par *Changer le .exe… → Autre fichier…*.
+- **« Aucun jeu trouvé »** ou badge **Échec** : l'installation a été annulée ou a échoué (archive corrompue, disque plein : voir *Journal d'installation*), ou le jeu a été installé ailleurs. Utilise *Réessayer avec la fenêtre*, ou *Changer le .exe… → Autre fichier…*.
 - **Le jeu ne démarre pas** : consulte *Journal du dernier lancement* et, s'il y en a un, le rapport de plantage. Essaie un autre Proton dans *Réglages*. Si l'installateur a laissé un dossier `_Redist` (Visual C++, DirectX), lance ces programmes dans le même préfixe :
   `WINEPREFIX=<dossier du jeu>/pfx GAMEID=umu-default umu-run chemin/vers/vcredist.exe`
 - **« Disque des jeux introuvable »** : le disque qui contient `games_dir` n'est pas monté.
@@ -175,6 +180,15 @@ tests/test_core.py      python3 -m unittest discover -s tests
 
 **Détection du `.exe`** : l'appli écarte les dossiers système et redistribuables, les utilitaires (désinstalleur, rapporteur de plantage, assistants…) et les fichiers de moins de 200 Ko. Elle classe les autres selon leur taille, leur ressemblance avec le nom du jeu, et donne un bonus aux binaires Unreal `-Win64-Shipping` / `-WinGDK-Shipping`.
 
-**Installateurs Inno Setup** : ils sont lancés avec `/DIR=C:\Games\<nom>` pour que ce dossier soit proposé par défaut.
+**Installation automatique** : l'appli lit le début du `setup.exe` pour reconnaître son type, puis passe les options silencieuses correspondantes.
+
+| Type | Reconnu par | Mode automatique |
+|---|---|---|
+| Inno Setup (la plupart des repacks) | `JR.Inno.Setup` dans le manifeste | `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP- /DIR=C:\Games\<nom>` |
+| NSIS | `Nullsoft.NSIS` | `/S /D=C:\Games\<nom>` |
+| MSI | extension `.msi` | `msiexec /i … /qn TARGETDIR=… INSTALLDIR=…` |
+| autre | — | pas de mode automatique : l'installateur s'ouvre |
+
+En mode fenêtre, Inno Setup reçoit quand même `/DIR=C:\Games\<nom>`, pour que ce dossier soit proposé par défaut. Le `.exe` est retenu sans question si l'installateur a renvoyé 0 et si le premier candidat devance le deuxième d'au moins 5 points de score, ou s'il est seul. Certains repacks lancent à la fin l'installation de Visual C++ ou DirectX, dont une petite fenêtre peut alors apparaître.
 
 **Suppression de l'installateur** : le dossier téléchargé n'est supprimé en entier que s'il contient le `setup.exe` et ses archives `.bin`, et que ce n'est ni le dossier personnel, ni Téléchargements, Bureau ou Documents, ni le dossier des jeux. Sinon, seuls le `setup.exe` et ses `.bin` sont supprimés.

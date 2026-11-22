@@ -19,6 +19,9 @@ DEFAULTS = {
     "games_dir": "/mnt/GAMES/FatMan" if Path("/mnt/GAMES").is_dir() else str(Path.home() / "Games/FatMan"),
     # Chemin d'un Proton (dossier contenant le script `proton`), ou vide = détection auto.
     "proton": "",
+    # Derniers choix de la fenêtre « Installer un jeu ».
+    "auto_install": True,
+    "delete_installer": False,
 }
 
 

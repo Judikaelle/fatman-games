@@ -17,6 +17,7 @@ META = "game.json"
 INSTALLING = "installing"
 NEEDS_EXE = "needs_exe"
 READY = "ready"
+FAILED = "failed"         # installation automatique sans résultat
 
 
 @dataclass
@@ -33,6 +34,8 @@ class Game:
     gamescope: bool = False
     gamescope_args: str = "-f"
     installer: str = ""
+    install_mode: str = ""      # « auto » (sans fenêtre) ou « window »
+    delete_installer: bool = False  # supprimer le setup.exe téléchargé une fois le jeu prêt
     installed_at: float = field(default_factory=time.time)
     last_played: float = 0.0
     playtime: float = 0.0       # secondes
