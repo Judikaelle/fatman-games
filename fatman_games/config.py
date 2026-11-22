@@ -22,6 +22,8 @@ DEFAULTS = {
     # Derniers choix de la fenêtre « Installer un jeu ».
     "auto_install": True,
     "delete_installer": False,
+    # Couper la musique des installateurs (repacks).
+    "mute_installer": True,
 }
 
 

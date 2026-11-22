@@ -12,7 +12,7 @@ gi.require_version("Adw", "1")
 gi.require_version("GdkPixbuf", "2.0")
 from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, GObject, Gtk  # noqa: E402
 
-from . import APP_ID, APP_NAME, config, covers, desktop, library, proton, repack, saves, steam  # noqa: E402
+from . import APP_ID, APP_NAME, audio, config, covers, desktop, library, proton, repack, saves, steam  # noqa: E402
 from .detect import find_executables, guess_name, human_size, installer_kind, obvious_exe  # noqa: E402
 
 MAX_CANDIDATES = 15
@@ -446,9 +446,13 @@ class Window(Adw.ApplicationWindow):
         self.toast((f"Installation automatique de {g.name}, sans fenêtre." if silent
                     else f"Installation de {g.name} : l'installateur s'ouvre.") + first)
 
+        muter = audio.Muter(g.slug, installer).start() if config.load().get("mute_installer", True) else None
+
         def wait():
             rc = proc.wait()
             proton.wait_wineserver(g)
+            if muter:
+                muter.stop()
             cands = find_executables(g.prefix / "drive_c", g.name)
             GLib.idle_add(self._installer_done, g.slug, rc, cands)
         threading.Thread(target=wait, daemon=True).start()

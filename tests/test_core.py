@@ -265,6 +265,20 @@ class SilentInstallTests(unittest.TestCase):
         self.assertEqual(proton.install_command(Path("/d/x.exe"), "", target, True),
                          ["/d/x.exe", "/DIR=C:\\Games\\Hades II"])
 
+    def test_installer_muted(self):
+        from fatman_games import audio
+        env = audio.tag_env({"PULSE_PROP": "a=b"}, "mkw")
+        self.assertEqual(env["PULSE_PROP"], "a=b fatman.install=mkw")
+        names = audio.installer_names(Path("/d/setup.exe"))
+        streams = [
+            {"index": 1, "mute": False, "properties": {"application.name": "Zen"}},
+            {"index": 2, "mute": False, "properties": {"application.name": "setup.tmp"}},
+            {"index": 3, "mute": False, "properties": {"application.name": "x", "fatman.install": "mkw"}},
+            {"index": 4, "mute": True, "properties": {"application.name": "setup.tmp"}},
+            {"index": 5, "mute": False, "properties": {"application.name": "y", "fatman.install": "autre"}},
+        ]
+        self.assertEqual(audio.to_mute(streams, "mkw", names), [2, 3])
+
     def test_obvious_exe(self):
         a, b = Candidate(Path("a.exe"), 1, 40.0), Candidate(Path("b.exe"), 1, 25.0)
         self.assertIs(obvious_exe([a, b]), a)

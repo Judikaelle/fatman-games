@@ -7,7 +7,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from . import config, library
+from . import audio, config, library
 from .detect import dll_overrides, installer_kind
 from .library import Game
 
@@ -57,6 +57,13 @@ def windows_dir(game: Game) -> str:
     return f"C:\\Games\\{name}"
 
 
+def installer_environment(game: Game) -> dict:
+    env = environment(game)
+    if config.load().get("mute_installer", True):
+        audio.tag_env(env, game.slug)  # repérage du flux audio à couper (voir audio.py)
+    return env
+
+
 def install_command(installer: Path, kind: str, target: str, silent: bool) -> list[str]:
     """Arguments passés à umu-run pour cet installateur.
 
@@ -88,11 +95,13 @@ def start_installer(game: Game, installer: Path, silent: bool = False) -> subpro
     log.write(f"\n=== Installation {time.ctime()} : {installer}\n".encode())
     log.write(f"=== Type : {kind or 'inconnu'} · mode : {'automatique' if silent else 'fenêtre'}\n".encode())
     log.write(f"=== Arguments : {' '.join(args[1:])}\n".encode())
+    if config.load().get("mute_installer", True):
+        log.write("=== Musique de l'installateur coupée (sourdine PipeWire)\n".encode())
     log.flush()
     return subprocess.Popen(
         [_umu(), *args],
         cwd=str(Path(installer).parent),
-        env=environment(game),
+        env=installer_environment(game),
         stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
         start_new_session=True,
     )

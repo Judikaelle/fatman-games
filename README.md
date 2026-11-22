@@ -39,6 +39,7 @@ Facultatif : `mangohud` et `gamescope` pour les réglages correspondants, `notif
    - **Installation automatique** (activée par défaut) : l'installateur tourne sans fenêtre, avec ses options par défaut, en général tout le jeu et ses DLC. La carte affiche la quantité de données écrites et le débit. Désactive l'option pour choisir toi-même les composants (langue, DLC facultatifs) dans l'installateur Windows, en gardant le dossier proposé (`C:\Games\<nom>`).
    - **Supprimer l'installateur à la fin** (désactivée par défaut) : le `setup.exe` et ses archives sont supprimés dès que le jeu est prêt.
 4. À la fin, tu reçois une **notification**. Si un `.exe` ressort nettement, il est retenu tout seul et le jeu est prêt. Sinon, l'appli te propose les candidats.
+   La **musique de l'installateur est coupée**, fréquente dans les repacks.
 5. Si l'installation automatique ne donne rien, la carte passe en **Échec**. *Journal d'installation* donne le détail, et **Réessayer avec la fenêtre** relance l'installateur normalement.
 6. Le jeu apparaît en carte. Lance-le avec **Jouer**, par un double-clic sur la jaquette, depuis le menu du bureau, ou depuis Steam.
 
@@ -116,12 +117,14 @@ Le fichier `~/.config/fatman-games/config.json` est facultatif :
   "games_dir": "/mnt/GAMES/FatMan",
   "proton": "",
   "auto_install": true,
-  "delete_installer": false
+  "delete_installer": false,
+  "mute_installer": true
 }
 ```
 
 - `games_dir` : dossier des jeux.
 - `auto_install`, `delete_installer` : derniers choix de la fenêtre « Installer un jeu », retenus automatiquement.
+- `mute_installer` : coupe la musique des installateurs (activé par défaut). Pendant l'installation, l'appli met en sourdine, via `pactl`, les flux audio de l'installateur : ceux qui portent l'étiquette `fatman.install` (posée par `PULSE_PROP`) ou le nom du programme (`setup.tmp`…). Les autres applications ne sont pas touchées, et le jeu garde le son. WirePlumber retient cette sourdine pour le nom `setup.tmp`.
 - `proton` : chemin d'un Proton par défaut. S'il est vide, l'appli choisit Proton-CachyOS s'il est présent, sinon le GE-Proton le plus récent, sinon n'importe quel Proton trouvé dans `~/.local/share/Steam/compatibilitytools.d` ou `/usr/share/steam/compatibilitytools.d`.
 
 ## Compatibilité des DLL (jeux Xbox PC, mods)
@@ -174,6 +177,7 @@ fatman_games/
   saves.py              sauvegarde / restauration des saves
   repack.py             suppression de l'installateur téléchargé (avec garde-fous)
   desktop.py            entrées de menu, icônes, notifications
+  audio.py              sourdine de la musique des installateurs (PipeWire)
   ui.py                 fenêtre GTK4 / libadwaita (grille de cartes)
 tests/test_core.py      python3 -m unittest discover -s tests
 ```
