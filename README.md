@@ -1,0 +1,180 @@
+# FatMan Games
+
+Bibliothèque de jeux Windows pour Linux (Bazzite, CachyOS, Fedora, Arch…). Tu lui donnes l'installateur d'un jeu (`setup.exe`) : elle l'installe sous Proton **en une seule étape**, puis affiche tes jeux **sous forme de cartes avec jaquette**, avec un bouton « Jouer », une entrée dans le menu de ton bureau, le temps de jeu, les réglages par jeu, la sauvegarde des saves et l'ajout à Steam.
+
+GTK4 / libadwaita, Python, `umu-run`. Aucune dépendance à compiler.
+
+## Installation
+
+```bash
+git clone https://github.com/Judikaelle/fatman-games.git
+cd fatman-games
+./install.sh
+```
+
+Le script crée :
+
+- la commande `~/.local/bin/fatman-games` (un lien vers le dossier cloné) ;
+- l'entrée **FatMan Games** du menu.
+
+Il associe aussi les fichiers `.exe` à l'appli : un double-clic sur un `setup.exe` dans ton gestionnaire de fichiers ouvre la fenêtre d'installation.
+
+### Dépendances
+
+| Distribution | Commande |
+|---|---|
+| Bazzite / SteamOS-like | rien, tout est déjà présent |
+| CachyOS / Arch | `sudo pacman -S --needed python-gobject gtk4 libadwaita umu-launcher icoutils` |
+| Fedora | `sudo dnf install python3-gobject gtk4 libadwaita umu-launcher icoutils` |
+
+Il faut aussi un Proton : Proton-CachyOS, GE-Proton ou celui de Steam. Le paquet `proton-cachyos` ou ProtonPlus conviennent. Sans aucun Proton installé, umu télécharge GE-Proton tout seul.
+
+Facultatif : `mangohud` et `gamescope` pour les réglages correspondants, `notify-send` (libnotify) pour les notifications.
+
+## Utilisation
+
+1. **Ajouter un jeu** : glisse le `setup.exe` dans la fenêtre, clique sur **Installer un jeu**, ou double-clique sur le `setup.exe`.
+2. **Vérifie le nom** proposé. Il est deviné à partir du nom du dossier : `Hades II v1.0 + 2 DLCs [Repack]` donne `Hades II`.
+3. **Suis l'installateur Windows** qui s'ouvre. Garde le dossier proposé (`C:\Games\<nom>`), puis attends la fin. Pendant ce temps, la carte affiche la quantité de données écrites et le débit.
+4. À la fin, tu reçois une **notification**, et l'appli **propose le `.exe` du jeu**. Valide-le ou choisis-en un autre.
+5. L'appli propose ensuite de **supprimer l'installateur téléchargé** pour récupérer la place. Tu peux aussi le faire plus tard.
+6. Le jeu apparaît en carte. Lance-le avec **Jouer**, par un double-clic sur la jaquette, depuis le menu du bureau, ou depuis Steam.
+
+### Les cartes
+
+- **Jaquette** : l'appli cherche le nom du jeu sur la boutique Steam (seul le nom est envoyé) et garde l'image dans `cover.jpg`. Sans correspondance, la carte affiche un dégradé avec l'icône du `.exe`. Pour changer la jaquette, remplace `cover.jpg` par n'importe quelle image verticale.
+- **Temps de jeu** et date de dernière partie, comptés quelle que soit la façon de lancer le jeu (appli, menu ou Steam).
+- **Badges** : *Installation*, avec une barre de progression ; *À configurer*, quand le `.exe` reste à choisir ; *En cours*, avec un bouton Arrêter.
+- **Recherche** par nom, avec le champ en haut de la fenêtre.
+
+### Menu « ⋮ » de chaque jeu
+
+| Action | Effet |
+|---|---|
+| Réglages… | MangoHud, Gamescope, version de Proton, options de lancement, variables d'environnement |
+| Changer le .exe… | Relance la détection, ou permet de choisir le fichier à la main |
+| Ajouter à Steam / Retirer de Steam | Raccourci « jeu non-Steam » avec la jaquette, pour Big Picture et la manette |
+| Sauvegarder les saves | Archive le profil Windows du jeu (voir plus bas) |
+| Restaurer des saves… | Choix d'une sauvegarde par date |
+| Ouvrir le dossier | Ouvre `C:\Games` du jeu |
+| Journal d'installation / du dernier lancement | Pour comprendre un problème |
+| Forcer l'arrêt | Tue tous les processus Windows du jeu |
+| Supprimer l'installateur… | Supprime le `setup.exe` téléchargé (définitif, sans corbeille) |
+| Désinstaller… | Supprime le jeu. Les saves sont sauvegardées avant (option cochée par défaut) et le raccourci Steam est retiré. |
+
+### Réglages par jeu
+
+- **MangoHud** : affiche les images par seconde, les températures et la charge.
+- **Gamescope** : lance le jeu dans une session Gamescope. Les options sont modifiables, par exemple `-f -W 2560 -H 1440 -r 240`.
+- **Version de Proton** : celle par défaut, ou n'importe quel Proton installé.
+- **Options de lancement** : arguments passés au `.exe`, par exemple `-dx11 -skipintro`.
+- **Variables d'environnement** : par exemple `DXVK_HUD=fps PROTON_ENABLE_NVAPI=1`.
+
+Les réglages sont pris en compte au lancement suivant et notés en tête de `last-run.log`.
+
+### Steam
+
+« Ajouter à Steam » écrit le raccourci dans `userdata/<compte>/config/shortcuts.vdf` et copie la jaquette dans `config/grid/`. Steam réécrit ce fichier quand il se ferme : s'il est ouvert, l'appli te demande l'autorisation de le fermer, puis le relance. Une copie du fichier d'origine est gardée une fois, sous le nom `shortcuts.vdf.fatman-bak`.
+
+### Sauvegarde des saves
+
+La plupart des jeux rangent leurs sauvegardes dans le profil Windows du jeu (`Documents`, `AppData`, `Saved Games`). L'appli archive ce profil entier, sans les caches (shaders, fichiers temporaires, rapports de plantage), dans :
+
+```
+<dossier des jeux>/_sauvegardes/<id>-AAAAMMJJ-HHMMSS.tar.gz
+```
+
+Une sauvegarde est faite automatiquement avant chaque désinstallation, sauf si tu décoches l'option. Après une réinstallation sous le même nom, *Restaurer des saves…* les remet en place.
+
+## Où sont les choses
+
+```
+/mnt/GAMES/FatMan/             (ou ~/Games/FatMan s'il n'y a pas de /mnt/GAMES)
+├── _sauvegardes/              ← archives des saves
+└── hades-ii/                  ← un dossier par jeu
+    ├── game.json              ← nom, .exe, réglages, temps de jeu
+    ├── cover.jpg              ← jaquette
+    ├── icon.png               ← icône extraite du .exe
+    ├── install.log
+    ├── last-run.log
+    └── pfx/                   ← environnement Windows (préfixe Proton) propre à ce jeu
+        └── drive_c/Games/Hades II/
+```
+
+- **La liste des jeux correspond au contenu de ce dossier**, il n'y a pas de base de données à part.
+- Il y a **un préfixe par jeu** : un jeu ne peut pas abîmer les autres.
+- Les entrées du menu sont dans `~/.local/share/applications/fatman-games-*.desktop`.
+
+## Configuration
+
+Le fichier `~/.config/fatman-games/config.json` est facultatif :
+
+```json
+{
+  "games_dir": "/mnt/GAMES/FatMan",
+  "proton": ""
+}
+```
+
+- `games_dir` : dossier des jeux.
+- `proton` : chemin d'un Proton par défaut. S'il est vide, l'appli choisit Proton-CachyOS s'il est présent, sinon le GE-Proton le plus récent, sinon n'importe quel Proton trouvé dans `~/.local/share/Steam/compatibilitytools.d` ou `/usr/share/steam/compatibilitytools.d`.
+
+## Compatibilité des DLL (jeux Xbox PC, mods)
+
+Certains jeux placent à côté de leur `.exe` une DLL système modifiée : couche de compatibilité des versions **Xbox PC / GDK**, chargeur de mods, injecteur. Wine utilise sa propre version de ces DLL et ignore celle du jeu, ce qui peut faire planter le jeu au démarrage. Un jeu Unreal affiche par exemple *« The Game has crashed and will close »*, avec `GDKRuntimeInitialize` dans le rapport.
+
+À chaque lancement, l'appli regarde donc le dossier du `.exe`. Si elle y trouve l'une de ces DLL, elle dit à Wine d'utiliser celle du jeu (`WINEDLLOVERRIDES=…=n,b`) : `winmm`, `version`, `dinput8`, `winhttp`, `xinput1_3`, `xinput1_4`, `xinput9_1_0`, `dsound`, `xgameruntime`, `dbghelp`, `msvcp140_atomic_wait`.
+
+`dxgi`, `d3d11` et `d3d12` sont volontairement exclus : ce sont ceux de DXVK/VKD3D.
+
+Si un jeu plante au tout premier lancement, relance-le une fois avant de chercher plus loin. Les rapports de plantage des jeux Unreal se trouvent dans `pfx/drive_c/users/steamuser/AppData/Local/<Projet>/Saved/Crashes/`.
+
+## Ligne de commande
+
+```bash
+fatman-games                         # ouvre la fenêtre
+fatman-games chemin/vers/setup.exe   # ouvre la fenêtre et lance l'installation
+fatman-games --list                  # liste les jeux (identifiant, état, nom)
+fatman-games --play hades-ii         # lance un jeu et attend sa fin (menu et Steam)
+```
+
+## Dépannage
+
+- **La première installation met une minute avant d'afficher quelque chose** : Proton crée l'environnement Windows du jeu.
+- **La carte reste sur « Installation » quelques minutes après la fermeture de l'installateur** : Proton attend la fin des derniers processus Windows. C'est normal.
+- **« Aucun jeu trouvé »** : l'installation a été annulée, ou le jeu a été installé ailleurs. Passe par *Changer le .exe… → Autre fichier…*.
+- **Le jeu ne démarre pas** : consulte *Journal du dernier lancement* et, s'il y en a un, le rapport de plantage. Essaie un autre Proton dans *Réglages*. Si l'installateur a laissé un dossier `_Redist` (Visual C++, DirectX), lance ces programmes dans le même préfixe :
+  `WINEPREFIX=<dossier du jeu>/pfx GAMEID=umu-default umu-run chemin/vers/vcredist.exe`
+- **« Disque des jeux introuvable »** : le disque qui contient `games_dir` n'est pas monté.
+
+## Désinstaller l'appli
+
+```bash
+./uninstall.sh
+```
+
+Ce script retire la commande et les entrées du menu. **Les jeux et les sauvegardes restent** dans le dossier des jeux.
+
+## Développement
+
+```
+fatman-games            point d'entrée (CLI + fenêtre)
+fatman_games/
+  config.py             réglages, Proton disponibles
+  detect.py             nom du jeu, recherche du .exe, DLL à privilégier
+  library.py            un jeu = un dossier + game.json
+  proton.py             umu-run : installation, lancement, temps de jeu, arrêt
+  covers.py             jaquettes (boutique Steam)
+  steam.py              raccourcis « jeux non-Steam » (VDF binaire)
+  saves.py              sauvegarde / restauration des saves
+  repack.py             suppression de l'installateur téléchargé (avec garde-fous)
+  desktop.py            entrées de menu, icônes, notifications
+  ui.py                 fenêtre GTK4 / libadwaita (grille de cartes)
+tests/test_core.py      python3 -m unittest discover -s tests
+```
+
+**Détection du `.exe`** : l'appli écarte les dossiers système et redistribuables, les utilitaires (désinstalleur, rapporteur de plantage, assistants…) et les fichiers de moins de 200 Ko. Elle classe les autres selon leur taille, leur ressemblance avec le nom du jeu, et donne un bonus aux binaires Unreal `-Win64-Shipping` / `-WinGDK-Shipping`.
+
+**Installateurs Inno Setup** : ils sont lancés avec `/DIR=C:\Games\<nom>` pour que ce dossier soit proposé par défaut.
+
+**Suppression de l'installateur** : le dossier téléchargé n'est supprimé en entier que s'il contient le `setup.exe` et ses archives `.bin`, et que ce n'est ni le dossier personnel, ni Téléchargements, Bureau ou Documents, ni le dossier des jeux. Sinon, seuls le `setup.exe` et ses `.bin` sont supprimés.

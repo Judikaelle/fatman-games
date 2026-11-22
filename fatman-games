@@ -1,0 +1,54 @@
+#!/usr/bin/python3
+"""Point d'entrée.
+
+  fatman-games                 ouvre la fenêtre
+  fatman-games setup.exe       ouvre la fenêtre et lance l'installation
+  fatman-games --play <id>     lance un jeu sans fenêtre (utilisé par le menu K)
+  fatman-games --list          liste les jeux dans le terminal
+"""
+
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(os.path.realpath(__file__)).parent))
+
+from fatman_games import config, library  # noqa: E402
+
+
+def notify(msg: str) -> None:
+    subprocess.run(["notify-send", "-a", "FatMan Games", "-i", "applications-games", msg],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) >= 2 and argv[1] == "--play":
+        from fatman_games import proton
+        g = library.get(argv[2]) if len(argv) > 2 else None
+        if not g or g.status != library.READY:
+            notify(f"Jeu introuvable ou pas prêt : {argv[2] if len(argv) > 2 else '?'}")
+            return 1
+        if proton.is_running(g):
+            notify(f"{g.name} est déjà lancé.")
+            return 0
+        try:
+            proton.play(g)   # attend la fin du jeu pour compter le temps de jeu
+        except (OSError, RuntimeError) as e:
+            notify(f"{g.name} : {e}")
+            return 1
+        return 0
+    if len(argv) >= 2 and argv[1] == "--list":
+        print(f"Dossier : {config.games_dir()}   Proton : {config.find_proton()}")
+        for g in library.all_games():
+            print(f"{g.slug:30} {g.status:10} {g.name}")
+        return 0
+    if len(argv) >= 2 and argv[1] in ("-h", "--help"):
+        print(__doc__)
+        return 0
+    from fatman_games import ui
+    return ui.run(argv)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

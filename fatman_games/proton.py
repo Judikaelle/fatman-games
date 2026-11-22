@@ -1,0 +1,149 @@
+"""Lancer l'installateur ou le jeu dans le préfixe Proton du jeu, via umu-run."""
+
+import os
+import shlex
+import shutil
+import subprocess
+import time
+from pathlib import Path
+
+from . import config, library
+from .detect import dll_overrides
+from .library import Game
+
+
+def proton_path(game: Game) -> str:
+    if game.proton and (Path(game.proton) / "proton").exists():
+        return game.proton
+    return config.find_proton()
+
+
+def parse_env(text: str) -> dict:
+    """« A=1 B="deux mots" » → {"A": "1", "B": "deux mots"} ; ignore ce qui n'a pas de « = »."""
+    out = {}
+    try:
+        parts = shlex.split(text or "")
+    except ValueError:
+        parts = (text or "").split()
+    for p in parts:
+        if "=" in p:
+            k, v = p.split("=", 1)
+            if k.replace("_", "").isalnum():
+                out[k] = v
+    return out
+
+
+def environment(game: Game) -> dict:
+    env = dict(os.environ)
+    env.update({
+        "WINEPREFIX": str(game.prefix),
+        "PROTONPATH": proton_path(game),
+        "GAMEID": "umu-default",
+        "STORE": "none",
+        "PROTON_LOG": "0",
+    })
+    return env
+
+
+def _umu() -> str:
+    umu = shutil.which("umu-run")
+    if not umu:
+        raise RuntimeError("umu-run est introuvable (paquet umu-launcher).")
+    return umu
+
+
+def start_installer(game: Game, installer: Path) -> subprocess.Popen:
+    """Démarre setup.exe. Les installateurs Inno Setup acceptent /DIR : on propose C:\\Games\\<nom>."""
+    game.prefix.mkdir(parents=True, exist_ok=True)
+    log = open(game.install_log, "ab")
+    log.write(f"\n=== Installation {time.ctime()} : {installer}\n".encode())
+    log.flush()
+    windows_name = "".join(c for c in game.name if c not in '<>:"/\\|?*').strip() or game.slug
+    return subprocess.Popen(
+        [_umu(), str(installer), f"/DIR=C:\\Games\\{windows_name}"],
+        cwd=str(Path(installer).parent),
+        env=environment(game),
+        stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+
+
+def wait_wineserver(game: Game, timeout: float = 600) -> None:
+    """Attend que tout ce qui tourne dans le préfixe soit terminé (décompresseurs en arrière-plan)."""
+    ws = Path(proton_path(game)) / "files/bin/wineserver"
+    if not ws.exists():
+        return
+    try:
+        subprocess.run([str(ws), "-w"], env=environment(game), timeout=timeout,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except subprocess.TimeoutExpired:
+        pass
+
+
+def game_command(game: Game) -> tuple[list[str], dict, list[str]]:
+    """Commande, environnement et lignes de journal pour lancer le jeu avec ses réglages."""
+    exe = game.exe_path
+    if not exe or not exe.exists():
+        raise FileNotFoundError(f"Exécutable introuvable : {exe}")
+    env = environment(game)
+    notes = []
+    overrides = dll_overrides(exe)
+    if overrides:
+        rule = ",".join(overrides) + "=n,b"
+        env["WINEDLLOVERRIDES"] = ";".join(x for x in (env.get("WINEDLLOVERRIDES"), rule) if x)
+        notes.append(f"DLL du jeu prioritaires sur Wine : {rule}")
+    if game.mangohud:
+        env["MANGOHUD"] = "1"
+        notes.append("MangoHud activé")
+    extra = parse_env(game.env)
+    if extra:
+        env.update(extra)
+        notes.append("Variables : " + " ".join(f"{k}={v}" for k, v in extra.items()))
+    cmd = [_umu(), str(exe), *shlex.split(game.launch_args or "")]
+    if game.gamescope and shutil.which("gamescope"):
+        cmd = ["gamescope", *shlex.split(game.gamescope_args or ""), "--", *cmd]
+        notes.append(f"Gamescope : {game.gamescope_args}")
+    notes.append(f"Proton : {env['PROTONPATH']}")
+    return cmd, env, notes
+
+
+def is_running(game: Game) -> bool:
+    try:
+        pid = int(game.pid_file.read_text().strip())
+        os.kill(pid, 0)
+    except (OSError, ValueError):
+        return False
+    return True
+
+
+def play(game: Game) -> int:
+    """Lance le jeu et attend sa fin ; met à jour le temps de jeu. Bloquant."""
+    cmd, env, notes = game_command(game)
+    exe = game.exe_path
+    log = open(game.run_log, "wb")
+    log.write(f"=== Lancement {time.ctime()} : {exe}\n".encode())
+    for n in notes:
+        log.write(f"=== {n}\n".encode())
+    log.flush()
+    started = time.time()
+    proc = subprocess.Popen(cmd, cwd=str(exe.parent), env=env, stdin=subprocess.DEVNULL,
+                            stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+    game.pid_file.write_text(str(proc.pid))
+    fresh = library.get(game.slug, game.dir.parent) or game
+    fresh.last_played = started
+    fresh.save()
+    try:
+        rc = proc.wait()
+    finally:
+        game.pid_file.unlink(missing_ok=True)
+        fresh = library.get(game.slug, game.dir.parent) or game  # relu : l'interface a pu l'enregistrer
+        fresh.playtime += time.time() - started
+        fresh.save()
+    return rc
+
+
+def kill_prefix(game: Game) -> None:
+    ws = Path(proton_path(game)) / "files/bin/wineserver"
+    if ws.exists():
+        subprocess.run([str(ws), "-k"], env=environment(game),
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
