@@ -133,7 +133,7 @@ class Window(Adw.ApplicationWindow):
         self.stack.add_named(self.empty, "empty")
         self.grid = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, homogeneous=True,
                                 activate_on_single_click=False,
-                                valign=Gtk.Align.START, column_spacing=22, row_spacing=26,
+                                valign=Gtk.Align.START, halign=Gtk.Align.CENTER, column_spacing=45, row_spacing=26,
                                 min_children_per_line=2, max_children_per_line=12)
         self.grid.add_css_class("game-grid")
         self.grid.set_filter_func(self._filter)
@@ -184,6 +184,8 @@ class Window(Adw.ApplicationWindow):
             child = Gtk.FlowBoxChild(child=self._card(g), focusable=False)
             child.game_name = g.name
             self.grid.append(child)
+        # Largeur naturelle = autant de cartes que de jeux : la grille reste centrée et serrée.
+        self.grid.set_max_children_per_line(max(2, min(12, len(games))))
         self.stack.set_visible_child_name("list" if games else "empty")
         self._fetch_covers([g for g in games if not g.cover_checked and not g.cover.exists()])
 
