@@ -10,7 +10,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 gi.require_version("GdkPixbuf", "2.0")
-from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, GObject, Gtk  # noqa: E402
+from gi.repository import Adw, Gdk, GdkPixbuf, Gio, GLib, GObject, Gtk, Pango  # noqa: E402
 
 from . import APP_ID, APP_NAME, audio, config, covers, desktop, library, proton, repack, saves, steam  # noqa: E402
 from .detect import find_executables, guess_name, human_size, installer_kind, obvious_exe  # noqa: E402
@@ -61,7 +61,7 @@ CSS = b"""
   background: linear-gradient(160deg, #e8507a, #5b2a86);
 }
 .cover-fallback label { color: white; font-weight: 800; font-size: 15pt; }
-.card-title { font-weight: 700; font-size: 11.5pt; }
+.card-title { font-weight: 700; font-size: 10.5pt; }
 .card-sub { font-size: 9pt; opacity: 0.65; }
 .badge {
   background: alpha(black, 0.65); color: white;
@@ -70,7 +70,7 @@ CSS = b"""
 .badge.warn { background: alpha(#c64600, 0.9); }
 .badge.live { background: alpha(#26a269, 0.92); }
 .badge.error { background: alpha(#c01c28, 0.92); }
-.card-menu { min-width: 32px; min-height: 32px; }
+.card-menu { min-width: 24px; min-height: 24px; padding: 0; }
 .play-btn { border-radius: 999px; font-weight: 700; }
 """
 
@@ -235,8 +235,9 @@ class Window(Adw.ApplicationWindow):
         card.append(overlay)
 
         def badge(text, kind=None, spinner=False):
-            b = Gtk.Box(spacing=6, halign=Gtk.Align.START, valign=Gtk.Align.START,
-                        margin_top=10, margin_start=10)
+            # En bas de la jaquette : le haut porte souvent le logo du jeu.
+            b = Gtk.Box(spacing=6, halign=Gtk.Align.START, valign=Gtk.Align.END,
+                        margin_bottom=10, margin_start=10)
             b.add_css_class("badge")
             if kind:
                 b.add_css_class(kind)
@@ -263,17 +264,21 @@ class Window(Adw.ApplicationWindow):
                 item.set_action_and_target_value(f"win.{action}", target)
                 sec.append_item(item)
             menu.append_section(None, sec)
-        mb = Gtk.MenuButton(icon_name="view-more-symbolic", menu_model=menu,
-                            halign=Gtk.Align.END, valign=Gtk.Align.START, margin_top=8, margin_end=8)
-        mb.add_css_class("osd")
+        # Le menu va à côté du nom, sous la jaquette, pour ne rien cacher de l'image.
+        mb = Gtk.MenuButton(icon_name="view-more-symbolic", menu_model=menu, valign=Gtk.Align.CENTER,
+                            tooltip_text="Plus d'actions")
+        mb.add_css_class("flat")
         mb.add_css_class("circular")
         mb.add_css_class("card-menu")
-        overlay.add_overlay(mb)
 
-        title = Gtk.Label(label=g.name, xalign=0, ellipsize=3, margin_start=14, margin_end=14,
-                          tooltip_text=g.name, max_width_chars=1, hexpand=True)
+        title = Gtk.Label(label=g.name, xalign=0, ellipsize=3, tooltip_text=g.name,
+                          max_width_chars=1, hexpand=True, wrap=True, lines=2,
+                          wrap_mode=Pango.WrapMode.WORD_CHAR)
         title.add_css_class("card-title")
-        card.append(title)
+        head = Gtk.Box(spacing=2, margin_start=12, margin_end=6, margin_top=4)
+        head.append(title)
+        head.append(mb)
+        card.append(head)
         sub = Gtk.Label(xalign=0, ellipsize=3, margin_start=14, margin_end=14, max_width_chars=1)
         sub.add_css_class("card-sub")
         card.append(sub)
