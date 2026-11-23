@@ -42,6 +42,7 @@ class Game:
     steam_appid: int = 0        # id boutique Steam : sert uniquement à récupérer la jaquette
     steam_shortcut: int = 0     # id du raccourci « jeu non-Steam », 0 = pas dans Steam
     cover_checked: bool = False
+    hero_checked: bool = False  # grande illustration Steam (bandeau « Reprendre ») cherchée
     dir: Path = field(default=None, repr=False, compare=False)
 
     @property
@@ -59,6 +60,10 @@ class Game:
     @property
     def cover(self) -> Path:
         return self.dir / "cover.jpg"
+
+    @property
+    def hero(self) -> Path:
+        return self.dir / "hero.jpg"
 
     @property
     def pid_file(self) -> Path:

@@ -24,6 +24,27 @@ def _date(ts: float) -> str:
     return time.strftime("%d/%m/%Y", time.localtime(ts)) if ts else ""
 
 
+MONTHS = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août",
+          "septembre", "octobre", "novembre", "décembre"]
+
+
+def _since(ts: float, now: float | None = None) -> str:
+    """« aujourd'hui », « hier », « il y a 3 jours », « le 4 novembre » (année si différente)."""
+    now = now or time.time()
+    day = time.localtime(ts)
+    today = time.localtime(now)
+    days = (time.mktime(today[:3] + (0, 0, 0, 0, 0, -1)) - time.mktime(day[:3] + (0, 0, 0, 0, 0, -1)))
+    days = round(days / 86400)
+    if days <= 0:
+        return "aujourd'hui"
+    if days == 1:
+        return "hier"
+    if days < 7:
+        return f"il y a {days} jours"
+    text = f"le {day.tm_mday} {MONTHS[day.tm_mon - 1]}"
+    return text if day.tm_year == today.tm_year else f"{text} {day.tm_year}"
+
+
 def _duration(sec: float) -> str:
     m = int(sec // 60)
     if m < 60:
@@ -32,7 +53,17 @@ def _duration(sec: float) -> str:
 
 
 CSS = b"""
-.game-grid { padding: 24px; }
+.library { padding: 24px 32px 32px 32px; }
+.hero { border-radius: 20px; box-shadow: 0 12px 32px alpha(black, 0.35); }
+.hero-scrim {
+  background: linear-gradient(to top, alpha(black, 0.88), alpha(black, 0.45) 45%, alpha(black, 0) 80%);
+}
+.hero-kicker { color: alpha(white, 0.75); font-size: 10.5pt; font-weight: 600; }
+.hero-title { color: white; font-size: 26pt; font-weight: 800; letter-spacing: -0.5px; }
+.hero-sub { color: alpha(white, 0.8); font-size: 10.5pt; }
+.hero-play { border-radius: 999px; font-weight: 800; font-size: 12pt; padding: 10px 28px; }
+.section-title { font-size: 13pt; font-weight: 800; margin-top: 28px; margin-bottom: 14px; }
+.section-count { font-size: 10.5pt; opacity: 0.55; margin-top: 28px; margin-bottom: 14px; }
 .game-grid > flowboxchild,
 .game-grid > flowboxchild:hover,
 .game-grid > flowboxchild:active,
@@ -72,9 +103,34 @@ CSS = b"""
 .badge.error { background: alpha(#c01c28, 0.92); }
 .card-menu { min-width: 24px; min-height: 24px; padding: 0; }
 .play-btn { border-radius: 999px; font-weight: 700; }
+.card-play { background: alpha(currentColor, 0.1); }
+.card-play:hover { background: @accent_bg_color; color: @accent_fg_color; }
 """
 
 CARD_W, CARD_H = 200, 300
+
+
+def _hero_texture(g: library.Game, scale: int = 1):
+    """Grande illustration Steam ; à défaut la jaquette floutée (Pillow) ; sinon rien."""
+    if g.hero.exists():
+        try:
+            return Gdk.Texture.new_from_filename(str(g.hero))
+        except GLib.Error:
+            pass
+    if not g.cover.exists():
+        return None
+    try:
+        import io
+        from PIL import Image, ImageFilter
+        im = Image.open(g.cover).convert("RGB")
+        w = 1280
+        h = round(w * im.height / im.width)
+        im = im.resize((w, h)).crop((0, h // 4, w, h // 4 + 420)).filter(ImageFilter.GaussianBlur(28))
+        buf = io.BytesIO()
+        im.save(buf, "PNG")
+        return Gdk.Texture.new_from_bytes(GLib.Bytes.new(buf.getvalue()))
+    except Exception:  # Pillow absent ou image illisible : pas de bandeau
+        return None
 
 
 def _cover_texture(path: Path, scale: int = 1):
@@ -117,7 +173,7 @@ class Window(Adw.ApplicationWindow):
         add.connect("clicked", self._pick_installer)
         header.pack_start(add)
         self.search = Gtk.SearchEntry(placeholder_text="Rechercher un jeu", width_chars=28)
-        self.search.connect("search-changed", lambda *_: self.grid.invalidate_filter())
+        self.search.connect("search-changed", self._on_search)
         header.set_title_widget(self.search)
         refresh = Gtk.Button(icon_name="view-refresh-symbolic", tooltip_text="Actualiser")
         refresh.connect("clicked", lambda *_: self.refresh())
@@ -133,12 +189,23 @@ class Window(Adw.ApplicationWindow):
         self.stack.add_named(self.empty, "empty")
         self.grid = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, homogeneous=True,
                                 activate_on_single_click=False,
-                                valign=Gtk.Align.START, halign=Gtk.Align.CENTER, column_spacing=45, row_spacing=26,
+                                valign=Gtk.Align.START, halign=Gtk.Align.START, column_spacing=45, row_spacing=26,
                                 min_children_per_line=2, max_children_per_line=12)
         self.grid.add_css_class("game-grid")
         self.grid.set_filter_func(self._filter)
-        self.stack.add_named(Gtk.ScrolledWindow(child=self.grid, vexpand=True,
-                                                hscrollbar_policy=Gtk.PolicyType.NEVER), "list")
+        # Bandeau « Reprendre » (dernier jeu lancé), puis toute la bibliothèque.
+        self.hero_slot = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.section = Gtk.Box(spacing=10)
+        self.section.append(Gtk.Label(label="Bibliothèque", xalign=0, css_classes=["section-title"]))
+        self.count = Gtk.Label(xalign=0, css_classes=["section-count"])
+        self.section.append(self.count)
+        lib = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, css_classes=["library"])
+        lib.append(self.hero_slot)
+        lib.append(self.section)
+        lib.append(self.grid)
+        self.stack.add_named(Gtk.ScrolledWindow(child=Adw.Clamp(child=lib, maximum_size=1280,
+                                                                tightening_threshold=1280),
+                                                vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER), "list")
         view.set_content(self.stack)
         self.toasts.set_child(view)
         self.set_content(self.toasts)
@@ -184,10 +251,79 @@ class Window(Adw.ApplicationWindow):
             child = Gtk.FlowBoxChild(child=self._card(g), focusable=False)
             child.game_name = g.name
             self.grid.append(child)
-        # Largeur naturelle = autant de cartes que de jeux : la grille reste centrée et serrée.
+        # Largeur naturelle = autant de cartes que de jeux : la grille reste serrée.
         self.grid.set_max_children_per_line(max(2, min(12, len(games))))
+        self._update_count()
+        self._show_hero(games)
         self.stack.set_visible_child_name("list" if games else "empty")
-        self._fetch_covers([g for g in games if not g.cover_checked and not g.cover.exists()])
+        self._fetch_covers([g for g in games if (not g.cover_checked and not g.cover.exists())
+                            or (not g.hero_checked and g.steam_appid)])
+
+    def _on_search(self, *_):
+        self.grid.invalidate_filter()
+        q = self.search.get_text().strip().lower()
+        self.hero_slot.set_visible(not q and self.hero_slot.get_first_child() is not None)
+        self._update_count()
+
+    def _update_count(self) -> None:
+        q = self.search.get_text().strip().lower()
+        names = []
+        child = self.grid.get_first_child()
+        while child:
+            names.append(getattr(child, "game_name", ""))
+            child = child.get_next_sibling()
+        if q:
+            n = sum(1 for name in names if q in name.lower())
+            self.count.set_label("aucun résultat" if n == 0 else f"{n} résultat" + ("s" if n > 1 else ""))
+        else:
+            self.count.set_label(f"{len(names)} jeu" + ("x" if len(names) > 1 else ""))
+
+    def _hero_game(self, games):
+        ready = [g for g in games if g.status == library.READY]
+        played = [g for g in ready if g.last_played]
+        if played:
+            return max(played, key=lambda g: g.last_played), "Reprendre"
+        if ready:
+            return max(ready, key=lambda g: g.installed_at), "Prêt à jouer"
+        return None, ""
+
+    def _show_hero(self, games) -> None:
+        while (c := self.hero_slot.get_first_child()):
+            self.hero_slot.remove(c)
+        g, kicker = self._hero_game(games)
+        tex = _hero_texture(g, self.get_scale_factor()) if g else None
+        self.hero_slot.set_visible(bool(tex) and not self.search.get_text().strip())
+        if not tex:
+            return
+        pic = Gtk.Picture(paintable=tex, can_shrink=True, content_fit=Gtk.ContentFit.COVER, height_request=260)
+        overlay = Gtk.Overlay(child=pic, css_classes=["hero"], overflow=Gtk.Overflow.HIDDEN)
+        overlay.add_overlay(Gtk.Box(css_classes=["hero-scrim"]))
+        info = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4, valign=Gtk.Align.END,
+                       halign=Gtk.Align.START, margin_start=32, margin_bottom=28, margin_end=32)
+        running = g.slug in self.running
+        info.append(Gtk.Label(label="En cours de jeu" if running else kicker, xalign=0,
+                              css_classes=["hero-kicker"]))
+        info.append(Gtk.Label(label=g.name, xalign=0, wrap=True, css_classes=["hero-title"]))
+        facts = []
+        if g.last_played:
+            facts.append(f"Dernière partie {_since(g.last_played)}")
+        if g.playtime >= 60:
+            facts.append(f"{_duration(g.playtime)} de jeu au total")
+        if facts:
+            info.append(Gtk.Label(label=", ".join(facts) if len(facts) == 1
+                                  else f"{facts[0]}, {facts[1][0].lower()}{facts[1][1:]}",
+                                  xalign=0, css_classes=["hero-sub"]))
+        target = GLib.Variant("s", g.slug)
+        btn = Gtk.Button(action_name="win.stop" if running else "win.play", action_target=target,
+                         halign=Gtk.Align.START, margin_top=14)
+        btn.set_child(Adw.ButtonContent(label="Arrêter" if running else "Jouer",
+                                        icon_name="media-playback-stop-symbolic" if running
+                                        else "media-playback-start-symbolic"))
+        btn.add_css_class("destructive-action" if running else "suggested-action")
+        btn.add_css_class("hero-play")
+        info.append(btn)
+        overlay.add_overlay(info)
+        self.hero_slot.append(overlay)
 
     def _fetch_covers(self, todo) -> None:
         if not todo or self.fetching:
@@ -195,7 +331,12 @@ class Window(Adw.ApplicationWindow):
         self.fetching = True
 
         def work():
-            got = sum(1 for g in todo if covers.fetch(g))
+            got = 0
+            for g in todo:
+                if not g.cover_checked and not g.cover.exists():
+                    got += covers.fetch(g)
+                if not g.hero_checked and g.steam_appid:
+                    got += covers.fetch_hero(g)
             GLib.idle_add(done, got)
 
         def done(got):
@@ -321,15 +462,13 @@ class Window(Adw.ApplicationWindow):
             sub.set_label(f"{_duration(g.playtime)} de jeu" if g.playtime >= 60 else "En cours de jeu")
             button("Arrêter", "stop", "destructive-action", icon="media-playback-stop-symbolic")
         else:
-            parts = []
+            sub.set_label(f"Joué {_since(g.last_played)}" if g.last_played else "Jamais lancé")
+            tip = [f"Installé le {_date(g.installed_at)}"]
             if g.playtime >= 60:
-                parts.append(f"{_duration(g.playtime)} de jeu")
-            parts.append(f"joué le {_date(g.last_played)}" if g.last_played
-                         else f"installé le {_date(g.installed_at)}")
-            text = " · ".join(parts)
-            sub.set_label(text[0].upper() + text[1:])
-            sub.set_tooltip_text(text[0].upper() + text[1:])
-            button("Jouer", "play", icon="media-playback-start-symbolic")
+                tip.insert(0, f"{_duration(g.playtime)} de jeu")
+            sub.set_tooltip_text("\n".join(tip))
+            # Bouton neutre : l'accent bleu est réservé au bandeau et aux actions à faire.
+            button("Jouer", "play", css="card-play", icon="media-playback-start-symbolic")
 
         # Double-clic sur la jaquette = Jouer
         if g.status == library.READY and g.slug not in self.running:

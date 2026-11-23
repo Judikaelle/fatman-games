@@ -43,21 +43,55 @@ def find_appid(name: str) -> int:
     return 0
 
 
-def image_urls(appid: int) -> list[str]:
-    """Adresses des images candidates, de la meilleure à la moins bonne."""
-    urls = []
+def _assets(appid: int) -> tuple[str, dict]:
+    """(asset_url_format, assets) de la boutique Steam, ou ("", {}) sans réponse."""
     try:
         q = json.dumps({"ids": [{"appid": appid}], "context": {"language": "french", "country_code": "FR"},
                         "data_request": {"include_assets": True}})
         data = json.loads(_get(ITEMS.format(q=urllib.parse.quote(q))))
         assets = data["response"]["store_items"][0].get("assets") or {}
-        fmt = assets.get("asset_url_format", "")
-        for key in ASSET_KEYS:
-            if assets.get(key) and "${FILENAME}" in fmt:
-                urls.append(CDN + fmt.replace("${FILENAME}", assets[key]))
+        return assets.get("asset_url_format", ""), assets
     except (OSError, ValueError, KeyError, IndexError):
-        pass
-    return urls + [ASSETS.format(id=appid, name=f) for f in FILES]
+        return "", {}
+
+
+def _urls(appid: int, keys: list[str], legacy: list[str]) -> list[str]:
+    fmt, assets = _assets(appid)
+    urls = [CDN + fmt.replace("${FILENAME}", assets[k]) for k in keys
+            if assets.get(k) and "${FILENAME}" in fmt]
+    return urls + [ASSETS.format(id=appid, name=f) for f in legacy]
+
+
+def image_urls(appid: int) -> list[str]:
+    """Adresses des jaquettes candidates, de la meilleure à la moins bonne."""
+    return _urls(appid, ASSET_KEYS, FILES)
+
+
+def _download(urls: list[str], dest: Path) -> bool:
+    for url in urls:
+        try:
+            img = _get(url)
+        except OSError:
+            continue
+        if img[:3] == b"\xff\xd8\xff":  # vrai JPEG
+            tmp = Path(str(dest) + ".tmp")
+            tmp.write_bytes(img)
+            tmp.replace(dest)
+            return True
+    return False
+
+
+def fetch_hero(game: Game) -> bool:
+    """Grande illustration horizontale (bibliothèque Steam) pour le bandeau « Reprendre »."""
+    if not game.steam_appid:
+        return False
+    try:
+        ok = _download(_urls(game.steam_appid, ["library_hero"], ["library_hero.jpg"]), game.hero)
+    except OSError:
+        return False
+    game.hero_checked = True
+    game.save()
+    return ok
 
 
 def fetch(game: Game) -> bool:
@@ -67,17 +101,7 @@ def fetch(game: Game) -> bool:
         appid = game.steam_appid or find_appid(game.name)
         if appid:
             game.steam_appid = appid
-            for url in image_urls(appid):
-                try:
-                    img = _get(url)
-                except OSError:
-                    continue
-                if img[:3] == b"\xff\xd8\xff":  # vrai JPEG
-                    tmp = Path(str(game.cover) + ".tmp")
-                    tmp.write_bytes(img)
-                    tmp.replace(game.cover)
-                    ok = True
-                    break
+            ok = _download(image_urls(appid), game.cover)
     except (OSError, ValueError):
         return False  # pas de réseau : on réessaiera au prochain lancement
     game.cover_checked = True
