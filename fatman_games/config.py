@@ -29,6 +29,9 @@ DEFAULTS = {
     # Ne pas lancer les extras de fin d'installation : vérification QuickSFV (fenêtre qui
     # bloque la fin) et installateur web DirectX (inutile avec Proton).
     "skip_installer_extras": True,
+    # Installation automatique : faire tourner l'installateur dans un Gamescope sans affichage.
+    # Certains installateurs ouvrent leur fenêtre de progression et des consoles même en mode silencieux.
+    "hide_installer_windows": True,
 }
 
 

@@ -120,7 +120,8 @@ Le fichier `~/.config/fatman-games/config.json` est facultatif :
   "delete_installer": false,
   "mute_installer": true,
   "block_installer_web": true,
-  "skip_installer_extras": true
+  "skip_installer_extras": true,
+  "hide_installer_windows": true
 }
 ```
 
@@ -128,6 +129,7 @@ Le fichier `~/.config/fatman-games/config.json` est facultatif :
 - `auto_install`, `delete_installer` : derniers choix de la fenêtre « Installer un jeu », retenus automatiquement.
 - `mute_installer` : coupe la musique des installateurs (activé par défaut). Pendant l'installation, l'appli met en sourdine, via `pactl`, les flux audio de l'installateur : ceux qui portent l'étiquette `fatman.install` (posée par `PULSE_PROP`) ou le nom du programme (`setup.tmp`…). Les autres applications ne sont pas touchées, et le jeu garde le son. WirePlumber retient cette sourdine pour le nom `setup.tmp`.
 - `block_installer_web` : empêche l'installateur d'ouvrir une page web à la fin (site du repack), en désactivant `winebrowser` pendant l'installation, et retire les lignes que le repack ajoute au fichier `hosts` du préfixe (activé par défaut). Ce `hosts` ne concerne que Wine, jamais Linux.
+- `hide_installer_windows` : en installation automatique, l'installateur tourne dans un Gamescope sans affichage (`--backend headless`) : sa fenêtre de progression et les consoles Windows qu'il ouvre même en mode silencieux restent invisibles (activé par défaut, ignoré si Gamescope est absent). « Réessayer avec la fenêtre » n'est jamais caché. Une installation cachée qui n'écrit plus rien pendant 10 minutes est arrêtée (installateur figé sur une erreur invisible) et propose ce bouton.
 - `skip_installer_extras` : empêche les programmes que les repacks lancent en fin d'installation de démarrer : la vérification QuickSFV, dont la fenêtre bloque la fin de l'installation, et l'installateur web de DirectX, inutile avec Proton (activé par défaut).
 - `proton` : chemin d'un Proton par défaut. S'il est vide, l'appli choisit Proton-CachyOS s'il est présent, sinon le GE-Proton le plus récent, sinon n'importe quel Proton trouvé dans `~/.local/share/Steam/compatibilitytools.d` ou `/usr/share/steam/compatibilitytools.d`.
 

@@ -16,6 +16,8 @@ from . import APP_ID, APP_NAME, audio, config, covers, desktop, library, proton,
 from .detect import find_executables, guess_name, human_size, installer_kind, obvious_exe  # noqa: E402
 
 MAX_CANDIDATES = 15
+# Installation automatique cachée : arrêtée si rien n'est écrit pendant ce temps.
+STALL_SECONDS = 600
 
 
 def _date(ts: float) -> str:
@@ -96,6 +98,7 @@ class Window(Adw.ApplicationWindow):
         self.installing: dict[str, object] = {}   # slug -> Popen de l'installateur
         self.running: set[str] = set()            # jeux lancés (par l'appli ou le menu K)
         self.progress: dict[str, tuple] = {}      # slug -> (barre, étiquette, octets, instant)
+        self.stall: dict[str, tuple] = {}         # slug -> (octets, depuis quand ils n'augmentent plus)
         self.busy: set[str] = set()               # désinstallation / recherche en cours
         self.fetching = False
         self.fresh: set[str] = set()              # installés à l'instant : proposer de supprimer l'installateur
@@ -441,6 +444,7 @@ class Window(Adw.ApplicationWindow):
             return
         self.installing[g.slug] = proc
         self.progress[g.slug] = (None, None, 0, time.time())
+        self.stall[g.slug] = (0, time.time())
         self.refresh()
         first = "" if (g.prefix / "drive_c").is_dir() else " La première fois, Proton prépare l'environnement (une minute)."
         self.toast((f"Installation automatique de {g.name}, sans fenêtre." if silent
@@ -475,6 +479,7 @@ class Window(Adw.ApplicationWindow):
     def _installer_done(self, slug, rc, cands):
         self.installing.pop(slug, None)
         self.progress.pop(slug, None)
+        self.stall.pop(slug, None)
         g = library.get(slug)
         if not g:
             return False
@@ -718,6 +723,7 @@ class Window(Adw.ApplicationWindow):
         now = time.time()
         speed = (n - prev) / max(now - t0, 0.1) if prev else 0
         self.progress[slug] = (bar, label, n, now)
+        self._check_stall(slug, n, now)
         if bar:
             bar.pulse()
         if label and n:
@@ -726,6 +732,27 @@ class Window(Adw.ApplicationWindow):
                 text += f" · {human_size(speed)}/s"
             label.set_label(text)
         return False
+
+    def _check_stall(self, slug, n, now):
+        """Installation cachée qui n'écrit plus rien depuis STALL_SECONDS : on l'arrête.
+
+        Sans fenêtre, un installateur figé (erreur de décompression, question inattendue)
+        resterait « en cours » pour toujours. L'arrêt mène à « Réessayer avec la fenêtre ».
+        """
+        size, since = self.stall.get(slug, (0, now))
+        if n > size + 1_000_000:
+            self.stall[slug] = (n, now)
+            return
+        g = library.get(slug)
+        if not g or g.install_mode != "auto" or now - since < STALL_SECONDS:
+            return
+        if not proton.hidden_wrapper(True):
+            return  # fenêtres visibles : l'utilisateur voit lui-même ce qui se passe
+        self.stall[slug] = (n, float("inf"))  # une seule fois
+        with open(g.install_log, "a") as log:
+            log.write(f"=== Rien d'écrit depuis {STALL_SECONDS // 60} min : installateur figé, arrêté\n")
+        threading.Thread(target=proton.kill_prefix, args=(g,), daemon=True).start()
+        self.toast(f"{g.name} : l'installation automatique est figée. Réessaie avec la fenêtre.")
 
     def _stop(self, slug: str) -> None:
         g = library.get(slug)

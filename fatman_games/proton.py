@@ -121,12 +121,38 @@ def install_command(installer: Path, kind: str, target: str, silent: bool) -> li
     return args + [f"/DIR={target}"]
 
 
+# Écran virtuel sans affichage : les fenêtres Windows y existent mais ne s'ouvrent nulle part.
+HIDDEN_DISPLAY = ["--backend", "headless", "-w", "1280", "-h", "720", "--"]
+
+
+def hidden_wrapper(silent: bool) -> list[str]:
+    """Préfixe de commande qui cache les fenêtres de l'installateur ([] si rien à faire)."""
+    if not silent or not config.load().get("hide_installer_windows", True):
+        return []
+    gamescope = shutil.which("gamescope")
+    return [gamescope, *HIDDEN_DISPLAY] if gamescope else []
+
+
+def hidden_command(game: Game, wrapper: list[str], cmd: list[str]) -> list[str]:
+    """Dans Gamescope, attendre aussi la fin de tout le préfixe (wineserver -w) avant de fermer
+    l'écran virtuel : des processus lancés par l'installateur peuvent survivre à umu-run et
+    planteraient en perdant leur affichage."""
+    if not wrapper:
+        return cmd
+    ws = Path(proton_path(game)) / "files/bin/wineserver"
+    if not ws.exists():
+        return [*wrapper, *cmd]
+    script = 'rc=0; "$@" || rc=$?; "$0" -w; exit $rc'
+    return [*wrapper, "sh", "-c", script, str(ws), *cmd]
+
+
 def start_installer(game: Game, installer: Path, silent: bool = False) -> subprocess.Popen:
     """Démarre l'installateur dans le préfixe du jeu, dans C:\\Games\\<nom>."""
     game.prefix.mkdir(parents=True, exist_ok=True)
     kind = installer_kind(installer)
     silent = silent and bool(kind)
     args = install_command(installer, kind, windows_dir(game), silent)
+    wrapper = hidden_wrapper(silent)
     log = open(game.install_log, "ab")
     log.write(f"\n=== Installation {time.ctime()} : {installer}\n".encode())
     log.write(f"=== Type : {kind or 'inconnu'} · mode : {'automatique' if silent else 'fenêtre'}\n".encode())
@@ -135,11 +161,13 @@ def start_installer(game: Game, installer: Path, silent: bool = False) -> subpro
         log.write("=== Musique de l'installateur coupée (sourdine PipeWire)\n".encode())
     if config.load().get("block_installer_web", True):
         log.write("=== Ouverture de pages web bloquée (winebrowser désactivé)\n".encode())
+    if wrapper:
+        log.write("=== Fenêtres de l'installateur cachées (Gamescope sans affichage)\n".encode())
     if config.load().get("skip_installer_extras", True):
         log.write(f"=== Extras de fin d'installation non lancés : {', '.join(INSTALLER_EXTRAS)}\n".encode())
     log.flush()
     return subprocess.Popen(
-        [_umu(), *args],
+        hidden_command(game, wrapper, [_umu(), *args]),
         cwd=str(Path(installer).parent),
         env=installer_environment(game),
         stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,

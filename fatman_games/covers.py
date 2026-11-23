@@ -10,8 +10,14 @@ from .library import Game
 
 UA = {"User-Agent": "fatman-games/1.0"}
 SEARCH = "https://store.steampowered.com/api/storesearch/?term={q}&l=french&cc=FR"
-ASSETS = "https://shared.steamstatic.com/store_item_assets/steam/apps/{id}/{name}"
+CDN = "https://shared.steamstatic.com/store_item_assets/"
+ASSETS = CDN + "steam/apps/{id}/{name}"
+# Les jeux récents rangent leurs images sous un dossier à empreinte (…/<hash>/library_capsule.jpg) :
+# seule l'API de la boutique donne le chemin exact.
+ITEMS = "https://api.steampowered.com/IStoreBrowseService/GetItems/v1/?input_json={q}"
 # Portrait d'abord ; à défaut la bannière (recadrée par la carte).
+ASSET_KEYS = ["library_capsule_2x", "library_capsule", "header"]
+# Anciens jeux : chemins sans empreinte, si l'API ne répond pas.
 FILES = ["library_600x900_2x.jpg", "library_600x900.jpg", "header.jpg"]
 
 
@@ -37,6 +43,23 @@ def find_appid(name: str) -> int:
     return 0
 
 
+def image_urls(appid: int) -> list[str]:
+    """Adresses des images candidates, de la meilleure à la moins bonne."""
+    urls = []
+    try:
+        q = json.dumps({"ids": [{"appid": appid}], "context": {"language": "french", "country_code": "FR"},
+                        "data_request": {"include_assets": True}})
+        data = json.loads(_get(ITEMS.format(q=urllib.parse.quote(q))))
+        assets = data["response"]["store_items"][0].get("assets") or {}
+        fmt = assets.get("asset_url_format", "")
+        for key in ASSET_KEYS:
+            if assets.get(key) and "${FILENAME}" in fmt:
+                urls.append(CDN + fmt.replace("${FILENAME}", assets[key]))
+    except (OSError, ValueError, KeyError, IndexError):
+        pass
+    return urls + [ASSETS.format(id=appid, name=f) for f in FILES]
+
+
 def fetch(game: Game) -> bool:
     """Télécharge cover.jpg si possible. Marque le jeu comme vérifié dans tous les cas."""
     ok = False
@@ -44,9 +67,9 @@ def fetch(game: Game) -> bool:
         appid = game.steam_appid or find_appid(game.name)
         if appid:
             game.steam_appid = appid
-            for f in FILES:
+            for url in image_urls(appid):
                 try:
-                    img = _get(ASSETS.format(id=appid, name=f))
+                    img = _get(url)
                 except OSError:
                     continue
                 if img[:3] == b"\xff\xd8\xff":  # vrai JPEG

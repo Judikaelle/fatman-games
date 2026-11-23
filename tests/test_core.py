@@ -265,6 +265,29 @@ class SilentInstallTests(unittest.TestCase):
         self.assertEqual(proton.install_command(Path("/d/x.exe"), "", target, True),
                          ["/d/x.exe", "/DIR=C:\\Games\\Hades II"])
 
+    def test_hidden_wrapper(self):
+        from unittest import mock
+        with mock.patch.object(proton.shutil, "which", return_value="/usr/bin/gamescope"), \
+             mock.patch.object(proton.config, "load", return_value={"hide_installer_windows": True}):
+            self.assertEqual(proton.hidden_wrapper(True)[:3], ["/usr/bin/gamescope", "--backend", "headless"])
+            self.assertEqual(proton.hidden_wrapper(True)[-1], "--")
+            self.assertEqual(proton.hidden_wrapper(False), [])  # « avec la fenêtre » : jamais caché
+        with mock.patch.object(proton.shutil, "which", return_value=None):
+            self.assertEqual(proton.hidden_wrapper(True), [])   # pas de Gamescope : fenêtres visibles
+
+    def test_cover_urls(self):
+        from unittest import mock
+        from fatman_games import covers
+        api = (b'{"response":{"store_items":[{"assets":{"asset_url_format":"steam/apps/9/${FILENAME}?t=1",'
+               b'"library_capsule":"abc/library_capsule.jpg","header":"def/header.jpg"}}]}}')
+        with mock.patch.object(covers, "_get", return_value=api):
+            urls = covers.image_urls(9)
+        self.assertEqual(urls[0], covers.CDN + "steam/apps/9/abc/library_capsule.jpg?t=1")
+        self.assertEqual(urls[1], covers.CDN + "steam/apps/9/def/header.jpg?t=1")
+        self.assertTrue(urls[-1].endswith("/9/header.jpg"))  # repli : ancien chemin sans empreinte
+        with mock.patch.object(covers, "_get", side_effect=OSError):
+            self.assertEqual(len(covers.image_urls(9)), len(covers.FILES))
+
     def test_installer_muted(self):
         from fatman_games import audio
         env = audio.tag_env({"PULSE_PROP": "a=b"}, "mkw")
