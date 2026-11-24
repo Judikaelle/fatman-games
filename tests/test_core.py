@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import tempfile
@@ -336,6 +337,37 @@ class SilentInstallTests(unittest.TestCase):
             g.save()
             g2 = library.get(g.slug, Path(t))
             self.assertEqual((g2.install_mode, g2.delete_installer, g2.status), ("auto", True, "failed"))
+
+
+class PadTests(unittest.TestCase):
+    def _env(self, game, steam):
+        from unittest import mock
+        environ = {"PATH": "/usr/bin"} | ({"SteamGameId": "123"} if steam else {})
+        with mock.patch.dict(proton.os.environ, environ, clear=True), \
+             mock.patch.object(proton, "_umu", return_value="/usr/bin/umu-run"), \
+             mock.patch.object(proton, "proton_path", return_value="/p"):
+            return proton.game_command(game)[1]
+
+    def test_xinput_pad(self):
+        with tempfile.TemporaryDirectory() as t:
+            g = library.create("Jeu", "/x/setup.exe", Path(t))
+            (g.dir / "jeu.exe").write_bytes(b"MZ")
+            g.exe = "jeu.exe"
+            self.assertTrue(g.xinput_pad)  # activé par défaut
+            self.assertEqual(self._env(g, steam=False).get("PROTON_PREFER_SDL"), "1")
+            self.assertNotIn("PROTON_PREFER_SDL", self._env(g, steam=True))  # Steam Input s'en charge
+            g.env = "PROTON_PREFER_SDL=0"  # une variable manuelle garde le dernier mot
+            self.assertEqual(self._env(g, steam=False)["PROTON_PREFER_SDL"], "0")
+            g.env, g.xinput_pad = "", False
+            self.assertNotIn("PROTON_PREFER_SDL", self._env(g, steam=False))
+
+    def test_old_game_json_gets_default(self):
+        with tempfile.TemporaryDirectory() as t:
+            g = library.create("Ancien", "/x/setup.exe", Path(t))
+            data = json.loads((g.dir / "game.json").read_text())
+            del data["xinput_pad"]
+            (g.dir / "game.json").write_text(json.dumps(data))
+            self.assertTrue(library.get(g.slug, Path(t)).xinput_pad)
 
 
 if __name__ == "__main__":

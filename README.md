@@ -54,7 +54,7 @@ Facultatif : `mangohud` et `gamescope` pour les réglages correspondants, `notif
 
 | Action | Effet |
 |---|---|
-| Réglages… | MangoHud, Gamescope, version de Proton, options de lancement, variables d'environnement |
+| Réglages… | MangoHud, Gamescope, version de Proton, manette Xbox, options de lancement, variables d'environnement |
 | Changer le .exe… | Relance la détection, ou permet de choisir le fichier à la main |
 | Ajouter à Steam / Retirer de Steam | Raccourci « jeu non-Steam » avec la jaquette, pour Big Picture et la manette |
 | Sauvegarder les saves | Archive le profil Windows du jeu (voir plus bas) |
@@ -70,6 +70,7 @@ Facultatif : `mangohud` et `gamescope` pour les réglages correspondants, `notif
 - **MangoHud** : affiche les images par seconde, les températures et la charge.
 - **Gamescope** : lance le jeu dans une session Gamescope. Les options sont modifiables, par exemple `-f -W 2560 -H 1440 -r 240`.
 - **Version de Proton** : celle par défaut, ou n'importe quel Proton installé.
+- **Manette vue comme une manette Xbox** (activé par défaut) : hors Steam, Proton ouvre une DualSense ou une DualShock en HID brut et les jeux qui ne lisent que XInput ne la voient pas. Ce réglage ajoute `PROTON_PREFER_SDL=1` pour qu'elle apparaisse comme une manette Xbox. À couper pour un portage PlayStation qui gère lui-même la DualSense (gâchettes adaptatives, gyroscope). Sans effet quand le jeu est lancé depuis Steam : Steam Input s'en occupe.
 - **Options de lancement** : arguments passés au `.exe`, par exemple `-dx11 -skipintro`.
 - **Variables d'environnement** : par exemple `DXVK_HUD=fps PROTON_ENABLE_NVAPI=1`.
 

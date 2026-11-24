@@ -202,6 +202,12 @@ def game_command(game: Game) -> tuple[list[str], dict, list[str]]:
     if game.mangohud:
         env["MANGOHUD"] = "1"
         notes.append("MangoHud activé")
+    # Hors Steam, Proton ouvre les manettes PlayStation en HID brut : un jeu qui ne lit
+    # que XInput ne les voit pas. Par SDL, Wine en fait une manette Xbox. Lancé depuis
+    # Steam, Steam Input s'en charge déjà (et SDL ferait apparaître une 2e manette).
+    if game.xinput_pad and "SteamGameId" not in os.environ:
+        env["PROTON_PREFER_SDL"] = "1"
+        notes.append("Manette vue comme une manette Xbox (PROTON_PREFER_SDL=1)")
     extra = parse_env(game.env)
     if extra:
         env.update(extra)

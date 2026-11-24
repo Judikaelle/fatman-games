@@ -964,6 +964,11 @@ class Window(Adw.ApplicationWindow):
         args = Adw.EntryRow(title="Options de lancement du jeu", text=g.launch_args or "")
         args.set_tooltip_text("Passées au .exe, par exemple : -dx11 -skipintro")
         comp.add(args)
+        pad = Adw.SwitchRow(title="Manette vue comme une manette Xbox",
+                            subtitle="À couper pour un portage PlayStation qui gère la DualSense "
+                                     "(gâchettes adaptatives, gyroscope). Sans effet depuis Steam.",
+                            active=g.xinput_pad)
+        comp.add(pad)
         env = Adw.EntryRow(title="Variables d'environnement", text=g.env or "")
         env.set_tooltip_text("Exemple : DXVK_HUD=fps PROTON_ENABLE_NVAPI=1")
         comp.add(env)
@@ -977,6 +982,7 @@ class Window(Adw.ApplicationWindow):
             fresh.proton = str(protons[i - 1]) if i > 0 else ""
             fresh.launch_args = args.get_text().strip()
             fresh.env = env.get_text().strip()
+            fresh.xinput_pad = pad.get_active()
             fresh.save()
             self.toast(f"Réglages de {fresh.name} enregistrés (pris en compte au prochain lancement).")
         dlg.connect("closed", on_closed)

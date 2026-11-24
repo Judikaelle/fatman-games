@@ -33,6 +33,7 @@ class Game:
     mangohud: bool = False
     gamescope: bool = False
     gamescope_args: str = "-f"
+    xinput_pad: bool = True     # manette PlayStation présentée au jeu comme une manette Xbox (XInput)
     installer: str = ""
     install_mode: str = ""      # « auto » (sans fenêtre) ou « window »
     delete_installer: bool = False  # supprimer le setup.exe téléchargé une fois le jeu prêt
